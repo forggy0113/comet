@@ -9,7 +9,7 @@
 - [ ] CLI commands (`init`, `status`, `doctor`, `update`)
 - [ ] Core installer / platform detection
 - [ ] Comet skills (`assets/skills/`, `assets/skills-zh/`)
-- [ ] Comet shell scripts (`assets/skills/comet/scripts/`)
+- [ ] Comet Node scripts (`assets/skills/comet/scripts/`)
 - [ ] Tests / CI
 - [ ] Documentation / changelog
 - [ ] Other:
@@ -23,7 +23,6 @@
 - [ ] `pnpm format:check`
 - [ ] `pnpm test`
 - [ ] `pnpm test -- test/ts/comet-scripts.test.ts`
-- [ ] `pnpm test:shell`
 - [ ] Not run:
 
 ## ✅ Checklist
@@ -33,7 +32,7 @@
 - [ ] `CHANGELOG.md` is updated when behavior changes
 - [ ] Skill changes were made in Chinese first when applicable, then synced to English
 - [ ] New scripts are included in `assets/manifest.json` and relevant tests
-- [ ] Shell scripts remain portable across macOS, Linux, and Windows Git Bash
+- [ ] Comet Node scripts remain portable across macOS, Linux, and Windows
 - [ ] No unrelated generated files or local artifacts are included
 
 ## 👀 Notes for Reviewers

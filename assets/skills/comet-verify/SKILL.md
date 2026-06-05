@@ -17,13 +17,17 @@ description: "Comet Phase 4: Verify and Close. Invoke with /comet-verify. Verify
 Execute entry verification:
 
 ```bash
-COMET_ENV="${COMET_ENV:-$(find . "$HOME"/.*/skills "$HOME/.config" "$HOME/.gemini" -path '*/comet/scripts/comet-env.sh' -type f -print -quit 2>/dev/null)}"
+COMET_ENV="${COMET_ENV:-$(find . "$HOME"/.*/skills "$HOME/.config" "$HOME/.gemini" -path '*/comet/scripts/comet-env.js' -type f -print -quit 2>/dev/null)}"
 if [ -z "$COMET_ENV" ]; then
-  echo "ERROR: comet-env.sh not found. Ensure the comet skill is installed." >&2
+  echo "ERROR: comet-env.js not found. Ensure the comet skill is installed." >&2
   return 1
 fi
-. "$COMET_ENV"
-"$COMET_BASH" "$COMET_STATE" check <change-name> verify
+COMET_ENV_JSON="$(node "$COMET_ENV")"
+COMET_STATE="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_STATE))")"
+COMET_GUARD="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_GUARD))")"
+COMET_HANDOFF="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_HANDOFF))")"
+COMET_ARCHIVE="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_ARCHIVE))")"
+node "$COMET_STATE" check <change-name> verify
 ```
 
 Proceed to Step 1 after verification passes. The script outputs specific failure reasons when verification fails.
@@ -39,7 +43,7 @@ Verification reports and branch-handling notes must use the language of the user
 Execute scale assessment:
 
 ```bash
-"$COMET_BASH" "$COMET_STATE" scale <change-name>
+node "$COMET_STATE" scale <change-name>
 ```
 
 The script automatically counts tasks, delta spec count, changed file count, determines light or full verification mode, and sets the verify_mode field.
@@ -54,13 +58,13 @@ Only after user chooses fix, allow rollback to build phase:
 
 ```bash
 # Execute only after user confirms fix
-"$COMET_BASH" "$COMET_STATE" transition <change-name> verify-fail
+node "$COMET_STATE" transition <change-name> verify-fail
 ```
 
 Note: If every task in build phase was committed, the script's file count based on working tree diff may underestimate change scale. In this case, must read plan file header `base-ref` and verify with commit range:
 
 ```bash
-PLAN=$("$COMET_BASH" "$COMET_STATE" get <change-name> plan)
+PLAN=$(node "$COMET_STATE" get <change-name> plan)
 BASE_REF=$(grep '^base-ref:' "$PLAN" 2>/dev/null | head -1 | sed 's/^base-ref: *//')
 git diff --stat "$BASE_REF"...HEAD
 ```
@@ -68,12 +72,12 @@ git diff --stat "$BASE_REF"...HEAD
 If commit range shows changes exceed lightweight threshold (> 4 files, cross-module coordination, or delta spec spans more than 1 capability), manually set to full verification:
 
 ```bash
-"$COMET_BASH" "$COMET_STATE" set <change-name> verify_mode full
+node "$COMET_STATE" set <change-name> verify_mode full
 ```
 
 ### 1b. Verification Failure Decision (Blocking Point)
 
-When verification does not pass, **must use the AskUserQuestion tool to pause and wait for the user to decide fix or accept deviation**. Must not automatically run `"$COMET_BASH" "$COMET_STATE" transition <change-name> verify-fail`, nor automatically invoke `/comet-build`. Must not just output a text prompt and then continue executing.
+When verification does not pass, **must use the AskUserQuestion tool to pause and wait for the user to decide fix or accept deviation**. Must not automatically run `node "$COMET_STATE" transition <change-name> verify-fail`, nor automatically invoke `/comet-build`. Must not just output a text prompt and then continue executing.
 
 When pausing, must list:
 - Failed items
@@ -83,7 +87,7 @@ When pausing, must list:
 **Uncertainty principle**: When severity is unclear, downgrade (SUGGESTION > WARNING > CRITICAL). Only use CRITICAL for build failures, test failures, and security issues; ambiguous or uncertain issues should be WARNING or SUGGESTION.
 
 After user selection, continue as follows:
-- **Fix all**: Run `"$COMET_BASH" "$COMET_STATE" transition <change-name> verify-fail`, then invoke `/comet-build` to fix
+- **Fix all**: Run `node "$COMET_STATE" transition <change-name> verify-fail`, then invoke `/comet-build` to fix
 - **Handle item by item**: CRITICAL failures must be fixed; non-CRITICAL failures may choose to accept deviation, but must record acceptance reason and impact scope in verification report. If any CRITICAL failure exists, skipping fix to accept all is not allowed
 
 ### 2a. Lightweight Verification (Small Changes)
@@ -102,7 +106,7 @@ When scale assessment result is "small", skip `openspec-verify-change` and direc
 
 ```bash
 # Execute only after user confirms fix
-"$COMET_BASH" "$COMET_STATE" transition <change-name> verify-fail
+node "$COMET_STATE" transition <change-name> verify-fail
 ```
 
 **Report format**: Brief table listing 5 check results + PASS/FAIL.
@@ -132,13 +136,13 @@ When verification does not pass: report missing items, enter Step 1b verificatio
 
 ```bash
 # Execute only after user confirms fix
-"$COMET_BASH" "$COMET_STATE" transition <change-name> verify-fail
+node "$COMET_STATE" transition <change-name> verify-fail
 ```
 
 **Spec Drift Handling** (user decision point):
 - If check item 6 finds contradictions (delta spec has content but design doc does not reflect it), **must use the AskUserQuestion tool as a single-select question to pause and wait for user to choose handling method**; must not select automatically. Options:
   - Option A: Append "Implementation Divergence" section to design doc recording deviation reason. Option A is a verify phase allowed artifact; after writing, must not re-trigger Step 1b dirty-worktree decision due to that design doc change
-  - Option B: After user selects B, run `"$COMET_BASH" "$COMET_STATE" transition <change-name> verify-fail`, then invoke `/comet-build`; `/comet-build`'s Spec Incremental Update rules will load the Superpowers `brainstorming` skill to update Design Doc + delta spec
+  - Option B: After user selects B, run `node "$COMET_STATE" transition <change-name> verify-fail`, then invoke `/comet-build`; `/comet-build`'s Spec Incremental Update rules will load the Superpowers `brainstorming` skill to update Design Doc + delta spec
   - Option C: Confirm deviation is acceptable, continue verification (design doc will be marked as `superseded-by-main-spec` during archiving)
 
 ### 3. Finishing (Superpowers)
@@ -168,8 +172,8 @@ mkdir -p docs/superpowers/reports
 # Write verification conclusions to report file, e.g.:
 # docs/superpowers/reports/YYYY-MM-DD-<change-name>-verify.md
 
-"$COMET_BASH" "$COMET_STATE" set <change-name> verification_report docs/superpowers/reports/YYYY-MM-DD-<change-name>-verify.md
-"$COMET_BASH" "$COMET_STATE" set <change-name> branch_status handled
+node "$COMET_STATE" set <change-name> verification_report docs/superpowers/reports/YYYY-MM-DD-<change-name>-verify.md
+node "$COMET_STATE" set <change-name> branch_status handled
 ```
 
 ## Exit Conditions
@@ -178,12 +182,12 @@ mkdir -p docs/superpowers/reports
 - Branch handled
 - `verification_report` in `.comet.yaml` points to an existing verification report file
 - `branch_status: handled` in `.comet.yaml`
-- **Phase guard**: Run `"$COMET_BASH" "$COMET_GUARD" <change-name> verify --apply`; after all PASS, auto-transitions to `phase: archive` through `comet-state transition verify-pass`
+- **Phase guard**: Run `node "$COMET_GUARD" <change-name> verify --apply`; after all PASS, auto-transitions to `phase: archive` through `comet-state transition verify-pass`
 
 After both verification and branch handling are complete, run guard for auto-transition:
 
 ```bash
-"$COMET_BASH" "$COMET_GUARD" <change-name> verify --apply
+node "$COMET_GUARD" <change-name> verify --apply
 ```
 
 State file auto-updates to `phase: archive`, `verify_result: pass`, `verified_at: YYYY-MM-DD`.
@@ -199,7 +203,7 @@ After exit conditions are met (including user selecting branch handling method),
 The verify phase may trigger context compaction. To recover, first run:
 
 ```bash
-"$COMET_BASH" "$COMET_STATE" check <change-name> verify --recover
+node "$COMET_STATE" check <change-name> verify --recover
 ```
 
 The script outputs structured recovery context (phase, verification status, branch status, recovery action). Follow the Recovery action to determine next step.

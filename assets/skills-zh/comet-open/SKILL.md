@@ -53,19 +53,23 @@ openspec/changes/<name>/
 创建 `.comet.yaml` 状态文件：
 
 ```bash
-COMET_ENV="${COMET_ENV:-$(find . "$HOME"/.*/skills "$HOME/.config" "$HOME/.gemini" -path '*/comet/scripts/comet-env.sh' -type f -print -quit 2>/dev/null)}"
+COMET_ENV="${COMET_ENV:-$(find . "$HOME"/.*/skills "$HOME/.config" "$HOME/.gemini" -path '*/comet/scripts/comet-env.js' -type f -print -quit 2>/dev/null)}"
 if [ -z "$COMET_ENV" ]; then
-  echo "ERROR: comet-env.sh not found. Ensure the comet skill is installed." >&2
+  echo "ERROR: comet-env.js not found. Ensure the comet skill is installed." >&2
   return 1
 fi
-. "$COMET_ENV"
+COMET_ENV_JSON="$(node "$COMET_ENV")"
+COMET_STATE="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_STATE))")"
+COMET_GUARD="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_GUARD))")"
+COMET_HANDOFF="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_HANDOFF))")"
+COMET_ARCHIVE="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_ARCHIVE))")"
 
 if [ -z "$COMET_STATE" ] || [ -z "$COMET_GUARD" ]; then
   echo "ERROR: Comet scripts not found. Ensure the comet skill is installed." >&2
   return 1
 fi
 
-"$COMET_BASH" "$COMET_STATE" init <name> full
+node "$COMET_STATE" init <name> full
 ```
 
 ### 3. 入口状态验证
@@ -73,7 +77,7 @@ fi
 验证状态机已正确初始化：
 
 ```bash
-"$COMET_BASH" "$COMET_STATE" check <name> open
+node "$COMET_STATE" check <name> open
 ```
 
 验证通过后继续 Step 4。验证失败时脚本会输出具体失败原因。
@@ -110,12 +114,12 @@ AskUserQuestion 必须以单选题形式呈现，包含以下摘要和选项：
 
 - proposal.md、design.md、tasks.md 均已创建且内容完整
 - **用户已确认** proposal、design、tasks 内容符合预期
-- **阶段守卫**：运行 `"$COMET_BASH" "$COMET_GUARD" <change-name> open --apply`，全部 PASS 后自动流转到下一阶段
+- **阶段守卫**：运行 `node "$COMET_GUARD" <change-name> open --apply`，全部 PASS 后自动流转到下一阶段
 
 退出前必须使用 `--apply`，否则 `.comet.yaml` 仍停留在 `phase: open`，下一阶段入口检查会失败。
 
 ```bash
-"$COMET_BASH" "$COMET_GUARD" <change-name> open --apply
+node "$COMET_GUARD" <change-name> open --apply
 ```
 
 完整流程会自动更新为 `phase: design`；hotfix/tweak preset 会自动更新为 `phase: build`。

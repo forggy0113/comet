@@ -67,8 +67,8 @@ Prefer reading `openspec/changes/<name>/.comet.yaml`. If not available, fall bac
   - If `build_pause: plan-ready` but the plan file is missing, return to `/comet-build` to handle corrupted state or regenerate the plan
   - If `build_mode` or `isolation` is unset, return to the corresponding `/comet-build` step to supplement before executing
   - If both are set, read the next unchecked task from tasks.md and continue
-- If `phase: verify` and `verify_result: fail`, enter the verification failure decision blocking point: pause and ask the user to fix or accept deviation; only after the user chooses fix, run `"$COMET_BASH" "$COMET_STATE" transition <name> verify-fail` and invoke `/comet-build`
-- If `phase: open` but proposal/design/tasks are complete, first run `"$COMET_BASH" "$COMET_GUARD" <change-name> open --apply` to repair state, then continue detection
+- If `phase: verify` and `verify_result: fail`, enter the verification failure decision blocking point: pause and ask the user to fix or accept deviation; only after the user chooses fix, run `node "$COMET_STATE" transition <name> verify-fail` and invoke `/comet-build`
+- If `phase: open` but proposal/design/tasks are complete, first run `node "$COMET_GUARD" <change-name> open --apply` to repair state, then continue detection
 - If `phase: archive`, only invoke `/comet-archive`; after archive succeeds, the change moves to the archive directory, so do not run guard against the old active directory
 
 **Step 2: Phase Determination** (check in order, first match wins)
@@ -105,7 +105,7 @@ If metadata conflicts with file state, use verifiable file state as source of tr
 |----------|----------|
 | `openspec list --json` fails | Check if openspec is installed, prompt user to run `openspec init` |
 | Sub-skill unavailable | Stop workflow, prompt to install or enable the corresponding skill |
-| `.comet.yaml` malformed or missing | Use file state as source of truth, correct with `"$COMET_BASH" "$COMET_STATE" set` then continue |
+| `.comet.yaml` malformed or missing | Use file state as source of truth, correct with `node "$COMET_STATE" set` then continue |
 | Build/test fails | Return to build phase for fixes, do not enter verify |
 | Incomplete change directory structure | Fill missing files according to `comet-open` artifact requirements |
 
@@ -226,24 +226,28 @@ State-machine hard constraints:
 - Before `build → verify`, `build_mode` must be selected
 - `build_mode: direct` is allowed by default only for `hotfix` / `tweak`; full workflow requires `direct_override: true`
 - `build_pause` is not an execution method and must not be written to `build_mode`
-- These constraints are enforced by both `comet-guard.sh build --apply` and `comet-state.sh transition <name> build-complete`
+- These constraints are enforced by both `comet-guard.js build --apply` and `comet-state.js transition <name> build-complete`
 
 ### Script Location
 
 Comet scripts are distributed in `comet/scripts/`. **Do not hardcode paths** — locate once, cache in env vars:
 
 ```bash
-COMET_ENV="${COMET_ENV:-$(find . "$HOME"/.*/skills "$HOME/.config" "$HOME/.gemini" -path '*/comet/scripts/comet-env.sh' -type f -print -quit 2>/dev/null)}"
+COMET_ENV="${COMET_ENV:-$(find . "$HOME"/.*/skills "$HOME/.config" "$HOME/.gemini" -path '*/comet/scripts/comet-env.js' -type f -print -quit 2>/dev/null)}"
 if [ -z "$COMET_ENV" ]; then
-  echo "ERROR: comet-env.sh not found. Ensure the comet skill is installed." >&2
+  echo "ERROR: comet-env.js not found. Ensure the comet skill is installed." >&2
   return 1
 fi
-. "$COMET_ENV"
+COMET_ENV_JSON="$(node "$COMET_ENV")"
+COMET_STATE="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_STATE))")"
+COMET_GUARD="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_GUARD))")"
+COMET_HANDOFF="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_HANDOFF))")"
+COMET_ARCHIVE="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_ARCHIVE))")"
 
 # Stop workflow when script location fails
 if [ -z "$COMET_GUARD" ] || [ -z "$COMET_STATE" ] || [ -z "$COMET_HANDOFF" ] || [ -z "$COMET_ARCHIVE" ]; then
   echo "ERROR: Comet scripts not found. Ensure the comet skill is installed." >&2
-  echo "Expected path pattern: */comet/scripts/comet-*.sh under project or platform skill directories" >&2
+  echo "Expected path pattern: */comet/scripts/comet-*.js under project or platform skill directories" >&2
   return 1
 fi
 ```
@@ -251,24 +255,24 @@ fi
 **Auto state update**: Guard supports `--apply` flag, automatically updating `.comet.yaml` state fields after checks pass:
 
 ```bash
-"$COMET_BASH" "$COMET_GUARD" <change-name> <phase> --apply
+node "$COMET_GUARD" <change-name> <phase> --apply
 ```
 
 `--apply` delegates to `comet-state transition`. Use these semantic events when state changes need to be expressed directly:
 
 ```bash
-"$COMET_BASH" "$COMET_STATE" transition <change-name> open-complete
-"$COMET_BASH" "$COMET_STATE" transition <change-name> design-complete
-"$COMET_BASH" "$COMET_STATE" transition <change-name> build-complete
-"$COMET_BASH" "$COMET_STATE" transition <change-name> verify-pass
-"$COMET_BASH" "$COMET_STATE" transition <change-name> verify-fail
-"$COMET_BASH" "$COMET_STATE" transition <archive-name> archived
+node "$COMET_STATE" transition <change-name> open-complete
+node "$COMET_STATE" transition <change-name> design-complete
+node "$COMET_STATE" transition <change-name> build-complete
+node "$COMET_STATE" transition <change-name> verify-pass
+node "$COMET_STATE" transition <change-name> verify-fail
+node "$COMET_STATE" transition <archive-name> archived
 ```
 
 **Archive script**: Complete all archive steps in one command:
 
 ```bash
-"$COMET_BASH" "$COMET_ARCHIVE" <change-name>
+node "$COMET_ARCHIVE" <change-name>
 ```
 
 After loading comet, agents should run the variable assignments above once, then reuse `$COMET_GUARD`, `$COMET_STATE`, `$COMET_HANDOFF`, `$COMET_ARCHIVE` throughout the session.
@@ -299,7 +303,7 @@ docs/superpowers/                      # Superpowers — HOW
 
 1. **brainstorming cannot be skipped** — Every change must undergo deep design (except hotfix and tweak)
 2. **delta spec is a living document** — Freely modify during phase 3, sync at archive
-3. **Handoff packages are generated by scripts** — OpenSpec → Superpowers context must be generated through `comet-handoff.sh` as compact traceable excerpts (use `--full` when needed), and validated by guard for source/hash/mode
+3. **Handoff packages are generated by scripts** — OpenSpec → Superpowers context must be generated through `comet-handoff.js` as compact traceable excerpts (use `--full` when needed), and validated by guard for source/hash/mode
 4. **Keep tasks.md in sync** — Check off each completed task
 5. **Commit frequently** — One commit per task, message reflects design intent
 6. **Verify before archive** — Execute `/comet-archive` only after `/comet-verify` passes

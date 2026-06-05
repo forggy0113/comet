@@ -53,19 +53,23 @@ openspec/changes/<name>/
 Create `.comet.yaml` state file:
 
 ```bash
-COMET_ENV="${COMET_ENV:-$(find . "$HOME"/.*/skills "$HOME/.config" "$HOME/.gemini" -path '*/comet/scripts/comet-env.sh' -type f -print -quit 2>/dev/null)}"
+COMET_ENV="${COMET_ENV:-$(find . "$HOME"/.*/skills "$HOME/.config" "$HOME/.gemini" -path '*/comet/scripts/comet-env.js' -type f -print -quit 2>/dev/null)}"
 if [ -z "$COMET_ENV" ]; then
-  echo "ERROR: comet-env.sh not found. Ensure the comet skill is installed." >&2
+  echo "ERROR: comet-env.js not found. Ensure the comet skill is installed." >&2
   return 1
 fi
-. "$COMET_ENV"
+COMET_ENV_JSON="$(node "$COMET_ENV")"
+COMET_STATE="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_STATE))")"
+COMET_GUARD="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_GUARD))")"
+COMET_HANDOFF="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_HANDOFF))")"
+COMET_ARCHIVE="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_ARCHIVE))")"
 
 if [ -z "$COMET_STATE" ] || [ -z "$COMET_GUARD" ]; then
   echo "ERROR: Comet scripts not found. Ensure the comet skill is installed." >&2
   return 1
 fi
 
-"$COMET_BASH" "$COMET_STATE" init <name> full
+node "$COMET_STATE" init <name> full
 ```
 
 ### 3. Entry State Verification
@@ -73,7 +77,7 @@ fi
 Verify state machine has been correctly initialized:
 
 ```bash
-"$COMET_BASH" "$COMET_STATE" check <name> open
+node "$COMET_STATE" check <name> open
 ```
 
 Proceed to Step 4 after verification passes. The script outputs specific failure reasons when verification fails.
@@ -110,12 +114,12 @@ After user selects "Confirm", proceed to exit conditions. When user selects "Nee
 
 - proposal.md, design.md, tasks.md all created with complete content
 - **User has confirmed** proposal, design, tasks content meets expectations
-- **Phase guard**: Run `"$COMET_BASH" "$COMET_GUARD" <change-name> open --apply`; after all PASS, auto-transitions to next phase
+- **Phase guard**: Run `node "$COMET_GUARD" <change-name> open --apply`; after all PASS, auto-transitions to next phase
 
 Must use `--apply` before exit, otherwise `.comet.yaml` remains at `phase: open` and the next phase entry check will fail.
 
 ```bash
-"$COMET_BASH" "$COMET_GUARD" <change-name> open --apply
+node "$COMET_GUARD" <change-name> open --apply
 ```
 
 Full workflow auto-transitions to `phase: design`; hotfix/tweak presets auto-transition to `phase: build`.

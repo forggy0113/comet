@@ -23,12 +23,16 @@ Execution chain: open → build → root cause check → verify → archive. Hot
 Locate Comet scripts before starting:
 
 ```bash
-COMET_ENV="${COMET_ENV:-$(find . "$HOME"/.*/skills "$HOME/.config" "$HOME/.gemini" -path '*/comet/scripts/comet-env.sh' -type f -print -quit 2>/dev/null)}"
+COMET_ENV="${COMET_ENV:-$(find . "$HOME"/.*/skills "$HOME/.config" "$HOME/.gemini" -path '*/comet/scripts/comet-env.js' -type f -print -quit 2>/dev/null)}"
 if [ -z "$COMET_ENV" ]; then
-  echo "ERROR: comet-env.sh not found. Ensure the comet skill is installed." >&2
+  echo "ERROR: comet-env.js not found. Ensure the comet skill is installed." >&2
   return 1
 fi
-. "$COMET_ENV"
+COMET_ENV_JSON="$(node "$COMET_ENV")"
+COMET_STATE="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_STATE))")"
+COMET_GUARD="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_GUARD))")"
+COMET_HANDOFF="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_HANDOFF))")"
+COMET_ARCHIVE="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_ARCHIVE))")"
 ```
 
 ### 1. Quick Open (preset open)
@@ -54,19 +58,19 @@ Streamlined OpenSpec artifacts must use the language of the user request that tr
 Initialize Comet state file:
 
 ```bash
-"$COMET_BASH" "$COMET_STATE" init <name> hotfix
+node "$COMET_STATE" init <name> hotfix
 ```
 
 Verify initialized state:
 
 ```bash
-"$COMET_BASH" "$COMET_STATE" check <name> open
+node "$COMET_STATE" check <name> open
 ```
 
 Run phase guard to transition open → build:
 
 ```bash
-"$COMET_BASH" "$COMET_GUARD" <change-name> open --apply
+node "$COMET_GUARD" <change-name> open --apply
 ```
 
 ### 2. Direct Build (preset build)
@@ -105,7 +109,7 @@ Before continuing or starting changes, handle uncommitted changes through `comet
 After root cause is confirmed eliminated, run phase guard to transition build → verify:
 
 ```bash
-"$COMET_BASH" "$COMET_GUARD" <change-name> build --apply
+node "$COMET_GUARD" <change-name> build --apply
 ```
 
 State automatically updates to `phase: verify`, `verify_result: pending`, then enter verification.
@@ -162,7 +166,7 @@ When upgrade conditions are met, **must use the AskUserQuestion tool to pause an
 After user confirms upgrade, **must first update the workflow field** before entering full flow:
 
 ```bash
-"$COMET_BASH" "$COMET_STATE" set <name> workflow full
+node "$COMET_STATE" set <name> workflow full
 ```
 
 Then on current change basis, supplement Design Doc: **Immediately use the Skill tool to load the `comet-design` skill**, proceed normally with full workflow. If user does not confirm upgrade, stop hotfix and report that current change has exceeded hotfix scope.
@@ -174,4 +178,4 @@ Then on current change basis, supplement Design Doc: **Immediately use the Skill
 - Bug fixed, tests pass
 - Change archived
 - If spec changes, synced to main spec
-- **Phase guard**: Before build → verify run `"$COMET_BASH" "$COMET_GUARD" <change-name> build --apply`; before verify → archive follow `/comet-verify` and run `"$COMET_BASH" "$COMET_GUARD" <change-name> verify --apply`
+- **Phase guard**: Before build → verify run `node "$COMET_GUARD" <change-name> build --apply`; before verify → archive follow `/comet-verify` and run `node "$COMET_GUARD" <change-name> verify --apply`

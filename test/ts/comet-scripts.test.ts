@@ -6,53 +6,11 @@ import path from 'path';
 
 const scriptsDir = path.resolve('assets', 'skills', 'comet', 'scripts');
 
-function findUsableBash(): string | null {
-  const candidates = [
-    process.env.COMET_TEST_BASH,
-    'bash',
-    ...(process.platform === 'win32'
-      ? [
-          'C:\\Program Files\\Git\\bin\\bash.exe',
-          'C:\\Program Files\\Git\\usr\\bin\\bash.exe',
-          'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
-        ]
-      : []),
-  ].filter((candidate): candidate is string => Boolean(candidate));
-
-  for (const candidate of [...new Set(candidates)]) {
-    const probe = spawnSync(candidate, ['-lc', 'uname -s'], { encoding: 'utf-8' });
-    if (probe.status === 0 && probe.stdout.trim()) {
-      if (process.platform === 'win32' && /linux/i.test(probe.stdout)) continue;
-      return candidate;
-    }
-  }
-  return null;
-}
-
-const bashCommand = findUsableBash();
-const bashUname = bashCommand
-  ? (spawnSync(bashCommand, ['-lc', 'uname -s'], { encoding: 'utf-8' }).stdout || '').trim()
-  : '';
-const isGitBash = /^(MINGW|MSYS|CYGWIN)/.test(bashUname);
-
-function toBashPath(filePath: string): string {
-  const resolved = path.resolve(filePath).replace(/\\/g, '/');
-  const driveMatch = resolved.match(/^([A-Za-z]):\/(.*)$/);
-  if (!driveMatch) return resolved;
-  if (process.platform === 'win32' && isGitBash) {
-    return `/${driveMatch[1].toLowerCase()}/${driveMatch[2]}`;
-  }
-  return `/mnt/${driveMatch[1].toLowerCase()}/${driveMatch[2]}`;
-}
-
-function runBash(cwd: string, script: string, args: string[] = [], env: NodeJS.ProcessEnv = {}) {
-  if (!bashCommand) {
-    throw new Error('comet shell script tests require Bash or Git Bash');
-  }
-  return spawnSync(bashCommand, [toBashPath(script), ...args], {
+function runNode(cwd: string, script: string, args: string[] = [], env: NodeJS.ProcessEnv = {}) {
+  return spawnSync(process.execPath, [script, ...args], {
     cwd,
     encoding: 'utf-8',
-    env: { ...process.env, ...env },
+    env: { ...process.env, NODE_NO_WARNINGS: '1', ...env },
   });
 }
 
@@ -71,9 +29,7 @@ async function createChange(tmpDir: string, name: string, yaml: string, tasks = 
   return changeDir;
 }
 
-const describeShell = bashCommand ? describe : describe.skip;
-
-describeShell('comet shell scripts', () => {
+describe('comet node scripts', () => {
   let tmpDir: string;
   let guardScript: string;
   let stateScript: string;
@@ -84,21 +40,23 @@ describeShell('comet shell scripts', () => {
       `comet-scripts-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     );
     await fs.mkdir(tmpDir, { recursive: true });
+    await fs.writeFile(path.join(tmpDir, 'package.json'), JSON.stringify({ type: 'module' }));
     const tmpScriptsDir = path.join(tmpDir, 'scripts');
     await fs.mkdir(tmpScriptsDir, { recursive: true });
     for (const name of [
-      'comet-env.sh',
-      'comet-archive.sh',
-      'comet-guard.sh',
-      'comet-handoff.sh',
-      'comet-state.sh',
-      'comet-yaml-validate.sh',
+      'comet-lib.js',
+      'comet-env.js',
+      'comet-archive.js',
+      'comet-guard.js',
+      'comet-handoff.js',
+      'comet-state.js',
+      'comet-yaml-validate.js',
     ]) {
       const content = await fs.readFile(path.join(scriptsDir, name), 'utf-8');
-      await fs.writeFile(path.join(tmpScriptsDir, name), content.replace(/\r\n/g, '\n'));
+      await fs.writeFile(path.join(tmpScriptsDir, name), content);
     }
-    guardScript = path.join(tmpScriptsDir, 'comet-guard.sh');
-    stateScript = path.join(tmpScriptsDir, 'comet-state.sh');
+    guardScript = path.join(tmpScriptsDir, 'comet-guard.js');
+    stateScript = path.join(tmpScriptsDir, 'comet-state.js');
   });
 
   afterEach(async () => {
@@ -106,7 +64,7 @@ describeShell('comet shell scripts', () => {
   });
 
   it('initializes a new change directory with workflow defaults', async () => {
-    const result = runBash(tmpDir, stateScript, ['init', 'new-full-change', 'full']);
+    const result = runNode(tmpDir, stateScript, ['init', 'new-full-change', 'full']);
     const yaml = await fs.readFile(
       path.join(tmpDir, 'openspec', 'changes', 'new-full-change', '.comet.yaml'),
       'utf-8',
@@ -120,7 +78,7 @@ describeShell('comet shell scripts', () => {
   }, 20_000);
 
   it('initializes build_pause as null for new changes', async () => {
-    const result = runBash(tmpDir, stateScript, ['init', 'pause-defaults', 'full']);
+    const result = runNode(tmpDir, stateScript, ['init', 'pause-defaults', 'full']);
     const yaml = await fs.readFile(
       path.join(tmpDir, 'openspec', 'changes', 'pause-defaults', '.comet.yaml'),
       'utf-8',
@@ -130,80 +88,26 @@ describeShell('comet shell scripts', () => {
     expect(yaml).toContain('build_pause: null');
   }, 20_000);
 
-  it('comet-env.sh exports bundled script paths from its own directory', async () => {
-    const envScript = path.join(tmpDir, 'scripts', 'comet-env.sh');
-    const checkScript = path.join(tmpDir, 'check-env.sh');
-    await writeFile(
-      checkScript,
-      [
-        '#!/bin/bash',
-        `. "${toBashPath(envScript)}"`,
-        'printf "%s\\n%s\\n%s\\n%s\\n%s\\n" "$COMET_STATE" "$COMET_GUARD" "$COMET_HANDOFF" "$COMET_ARCHIVE" "$COMET_BASH"',
-        '',
-      ].join('\n'),
-    );
-    const result = runBash(tmpDir, checkScript);
+  it('comet-env.js outputs bundled script paths from its own directory', async () => {
+    const envScript = path.join(tmpDir, 'scripts', 'comet-env.js');
+    const result = runNode(tmpDir, envScript);
+    const env = JSON.parse(result.stdout);
 
     expect(result.status).toBe(0);
     expect(result.stderr).toBe('');
-    expect(result.stdout).toContain('comet-state.sh');
-    expect(result.stdout).toContain('comet-guard.sh');
-    expect(result.stdout).toContain('comet-handoff.sh');
-    expect(result.stdout).toContain('comet-archive.sh');
-    expect(result.stdout).toContain('bash');
+    expect(env.COMET_STATE).toContain('comet-state.js');
+    expect(env.COMET_GUARD).toContain('comet-guard.js');
+    expect(env.COMET_HANDOFF).toContain('comet-handoff.js');
+    expect(env.COMET_ARCHIVE).toContain('comet-archive.js');
   }, 20_000);
 
-  it('comet-env.sh returns failure when a bundled script is missing', async () => {
-    const envScript = path.join(tmpDir, 'scripts', 'comet-env.sh');
-    await fs.rm(path.join(tmpDir, 'scripts', 'comet-guard.sh'));
-    const checkScript = path.join(tmpDir, 'check-env-missing.sh');
-    await writeFile(
-      checkScript,
-      [
-        '#!/bin/bash',
-        `. "${toBashPath(envScript)}"`,
-        'status=$?',
-        'echo "source-status=$status"',
-        'exit "$status"',
-        '',
-      ].join('\n'),
-    );
-
-    const result = runBash(tmpDir, checkScript);
+  it('comet-env.js returns failure when a bundled script is missing', async () => {
+    const envScript = path.join(tmpDir, 'scripts', 'comet-env.js');
+    await fs.rm(path.join(tmpDir, 'scripts', 'comet-guard.js'));
+    const result = runNode(tmpDir, envScript);
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('ERROR: Comet scripts not found');
-    expect(result.stdout).toContain('source-status=1');
-  }, 20_000);
-
-  it('comet-env.sh does not change caller shell options when sourced', async () => {
-    const envScript = path.join(tmpDir, 'scripts', 'comet-env.sh');
-    const checkScript = path.join(tmpDir, 'check-env-options.sh');
-    await writeFile(
-      checkScript,
-      [
-        '#!/bin/bash',
-        'set +e',
-        'set +u',
-        'set +o pipefail',
-        `. "${toBashPath(envScript)}"`,
-        'case "$-" in *e*) echo errexit-on ;; *) echo errexit-off ;; esac',
-        'case "$-" in *u*) echo nounset-on ;; *) echo nounset-off ;; esac',
-        "if set -o | grep -E '^pipefail[[:space:]]+on' >/dev/null; then",
-        '  echo pipefail-on',
-        'else',
-        '  echo pipefail-off',
-        'fi',
-        '',
-      ].join('\n'),
-    );
-
-    const result = runBash(tmpDir, checkScript);
-
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain('errexit-off');
-    expect(result.stdout).toContain('nounset-off');
-    expect(result.stdout).toContain('pipefail-off');
   }, 20_000);
 
   it('blocks build phase when the project build command fails', async () => {
@@ -230,14 +134,14 @@ describeShell('comet shell scripts', () => {
       JSON.stringify({ scripts: { build: 'node -e "process.exit(1)"' } }),
     );
 
-    const result = runBash(tmpDir, guardScript, ['broken-build', 'build']);
+    const result = runNode(tmpDir, guardScript, ['broken-build', 'build']);
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('[FAIL] Build passes');
   }, 20_000);
 
   it('generates a design handoff and requires minimal design doc linkage before leaving design', async () => {
-    const handoffScript = path.join(tmpDir, 'scripts', 'comet-handoff.sh');
+    const handoffScript = path.join(tmpDir, 'scripts', 'comet-handoff.js');
     await createChange(
       tmpDir,
       'handoff-change',
@@ -262,13 +166,13 @@ describeShell('comet shell scripts', () => {
       'delta spec\n',
     );
 
-    const handoff = runBash(tmpDir, handoffScript, ['handoff-change', 'design', '--write']);
-    const contextPath = runBash(tmpDir, stateScript, [
+    const handoff = runNode(tmpDir, handoffScript, ['handoff-change', 'design', '--write']);
+    const contextPath = runNode(tmpDir, stateScript, [
       'get',
       'handoff-change',
       'handoff_context',
     ]).stdout.trim();
-    const contextHash = runBash(tmpDir, stateScript, [
+    const contextHash = runNode(tmpDir, stateScript, [
       'get',
       'handoff-change',
       'handoff_hash',
@@ -305,14 +209,14 @@ describeShell('comet shell scripts', () => {
         '',
       ].join('\n'),
     );
-    runBash(tmpDir, stateScript, [
+    runNode(tmpDir, stateScript, [
       'set',
       'handoff-change',
       'design_doc',
       'docs/superpowers/specs/handoff-design.md',
     ]);
 
-    const result = runBash(tmpDir, guardScript, ['handoff-change', 'design']);
+    const result = runNode(tmpDir, guardScript, ['handoff-change', 'design']);
 
     expect(result.status).toBe(0);
     expect(result.stderr).toContain('[PASS] design handoff context exists');
@@ -322,8 +226,8 @@ describeShell('comet shell scripts', () => {
   }, 20_000);
 
   it('reads comet yaml fields without including trailing comments', async () => {
-    const handoffScript = path.join(tmpDir, 'scripts', 'comet-handoff.sh');
-    const validateScript = path.join(tmpDir, 'scripts', 'comet-yaml-validate.sh');
+    const handoffScript = path.join(tmpDir, 'scripts', 'comet-handoff.js');
+    const validateScript = path.join(tmpDir, 'scripts', 'comet-yaml-validate.js');
     await createChange(
       tmpDir,
       'commented-yaml',
@@ -343,9 +247,9 @@ describeShell('comet shell scripts', () => {
       ].join('\n'),
     );
 
-    const phase = runBash(tmpDir, stateScript, ['get', 'commented-yaml', 'phase']);
-    const validate = runBash(tmpDir, validateScript, ['commented-yaml']);
-    const handoff = runBash(tmpDir, handoffScript, ['commented-yaml', 'design', '--write']);
+    const phase = runNode(tmpDir, stateScript, ['get', 'commented-yaml', 'phase']);
+    const validate = runNode(tmpDir, validateScript, ['commented-yaml']);
+    const handoff = runNode(tmpDir, handoffScript, ['commented-yaml', 'design', '--write']);
 
     expect(phase.status).toBe(0);
     expect(phase.stdout.trim()).toBe('design');
@@ -354,7 +258,7 @@ describeShell('comet shell scripts', () => {
   }, 20_000);
 
   it('accepts design doc frontmatter after a BOM and leading blank lines', async () => {
-    const handoffScript = path.join(tmpDir, 'scripts', 'comet-handoff.sh');
+    const handoffScript = path.join(tmpDir, 'scripts', 'comet-handoff.js');
     await createChange(
       tmpDir,
       'frontmatter-prefix',
@@ -373,7 +277,7 @@ describeShell('comet shell scripts', () => {
         '',
       ].join('\n'),
     );
-    runBash(tmpDir, handoffScript, ['frontmatter-prefix', 'design', '--write']);
+    runNode(tmpDir, handoffScript, ['frontmatter-prefix', 'design', '--write']);
     await writeFile(
       path.join(tmpDir, 'docs', 'superpowers', 'specs', 'frontmatter-prefix-design.md'),
       [
@@ -387,14 +291,14 @@ describeShell('comet shell scripts', () => {
         '',
       ].join('\n'),
     );
-    runBash(tmpDir, stateScript, [
+    runNode(tmpDir, stateScript, [
       'set',
       'frontmatter-prefix',
       'design_doc',
       'docs/superpowers/specs/frontmatter-prefix-design.md',
     ]);
 
-    const result = runBash(tmpDir, guardScript, ['frontmatter-prefix', 'design']);
+    const result = runNode(tmpDir, guardScript, ['frontmatter-prefix', 'design']);
 
     expect(result.status).toBe(0);
     expect(result.stderr).toContain('[PASS] Design Doc frontmatter links current change');
@@ -402,7 +306,7 @@ describeShell('comet shell scripts', () => {
   }, 20_000);
 
   it('generates a full-mode design handoff when --full is passed', async () => {
-    const handoffScript = path.join(tmpDir, 'scripts', 'comet-handoff.sh');
+    const handoffScript = path.join(tmpDir, 'scripts', 'comet-handoff.js');
     await createChange(
       tmpDir,
       'full-handoff',
@@ -422,7 +326,7 @@ describeShell('comet shell scripts', () => {
       ].join('\n'),
     );
 
-    const handoff = runBash(tmpDir, handoffScript, ['full-handoff', 'design', '--write', '--full']);
+    const handoff = runNode(tmpDir, handoffScript, ['full-handoff', 'design', '--write', '--full']);
 
     expect(handoff.status).toBe(0);
     const contextMarkdown = await fs.readFile(
@@ -442,7 +346,7 @@ describeShell('comet shell scripts', () => {
   }, 20_000);
 
   it('rejects handoff generation when required OpenSpec artifacts are missing', async () => {
-    const handoffScript = path.join(tmpDir, 'scripts', 'comet-handoff.sh');
+    const handoffScript = path.join(tmpDir, 'scripts', 'comet-handoff.js');
     const changeDir = path.join(tmpDir, 'openspec', 'changes', 'missing-artifacts');
     await fs.mkdir(changeDir, { recursive: true });
     await writeFile(
@@ -465,14 +369,14 @@ describeShell('comet shell scripts', () => {
     await writeFile(path.join(changeDir, 'proposal.md'), 'proposal\n');
     // design.md and tasks.md intentionally omitted
 
-    const result = runBash(tmpDir, handoffScript, ['missing-artifacts', 'design', '--write']);
+    const result = runNode(tmpDir, handoffScript, ['missing-artifacts', 'design', '--write']);
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('required OpenSpec artifact missing or empty');
   }, 20_000);
 
   it('detects OpenSpec artifacts changed after handoff was generated', async () => {
-    const handoffScript = path.join(tmpDir, 'scripts', 'comet-handoff.sh');
+    const handoffScript = path.join(tmpDir, 'scripts', 'comet-handoff.js');
     await createChange(
       tmpDir,
       'stale-handoff',
@@ -492,7 +396,7 @@ describeShell('comet shell scripts', () => {
       ].join('\n'),
     );
 
-    runBash(tmpDir, handoffScript, ['stale-handoff', 'design', '--write']);
+    runNode(tmpDir, handoffScript, ['stale-handoff', 'design', '--write']);
 
     // Mutate proposal.md after handoff was generated
     await writeFile(
@@ -500,7 +404,7 @@ describeShell('comet shell scripts', () => {
       'mutated proposal\n',
     );
 
-    const result = runBash(tmpDir, guardScript, ['stale-handoff', 'design']);
+    const result = runNode(tmpDir, guardScript, ['stale-handoff', 'design']);
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('[FAIL] design handoff context exists');
@@ -508,7 +412,7 @@ describeShell('comet shell scripts', () => {
   }, 20_000);
 
   it('blocks design exit when design doc frontmatter is missing required fields', async () => {
-    const handoffScript = path.join(tmpDir, 'scripts', 'comet-handoff.sh');
+    const handoffScript = path.join(tmpDir, 'scripts', 'comet-handoff.js');
     await createChange(
       tmpDir,
       'bad-frontmatter',
@@ -528,7 +432,7 @@ describeShell('comet shell scripts', () => {
       ].join('\n'),
     );
 
-    runBash(tmpDir, handoffScript, ['bad-frontmatter', 'design', '--write']);
+    runNode(tmpDir, handoffScript, ['bad-frontmatter', 'design', '--write']);
 
     // Design doc with wrong comet_change
     await writeFile(
@@ -542,14 +446,14 @@ describeShell('comet shell scripts', () => {
         '',
       ].join('\n'),
     );
-    runBash(tmpDir, stateScript, [
+    runNode(tmpDir, stateScript, [
       'set',
       'bad-frontmatter',
       'design_doc',
       'docs/superpowers/specs/bad-design.md',
     ]);
 
-    const result = runBash(tmpDir, guardScript, ['bad-frontmatter', 'design']);
+    const result = runNode(tmpDir, guardScript, ['bad-frontmatter', 'design']);
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('[FAIL] Design Doc frontmatter links current change');
@@ -579,8 +483,8 @@ describeShell('comet shell scripts', () => {
       JSON.stringify({ scripts: { build: 'node -e "process.exit(0)"' } }),
     );
 
-    const guard = runBash(tmpDir, guardScript, ['missing-build-decisions', 'build']);
-    const transition = runBash(tmpDir, stateScript, [
+    const guard = runNode(tmpDir, guardScript, ['missing-build-decisions', 'build']);
+    const transition = runNode(tmpDir, stateScript, [
       'transition',
       'missing-build-decisions',
       'build-complete',
@@ -615,15 +519,15 @@ describeShell('comet shell scripts', () => {
       ].join('\n'),
     );
 
-    const setPlanReady = runBash(tmpDir, stateScript, [
+    const setPlanReady = runNode(tmpDir, stateScript, [
       'set',
       'pause-set',
       'build_pause',
       'plan-ready',
     ]);
-    const planReady = runBash(tmpDir, stateScript, ['get', 'pause-set', 'build_pause']);
-    const setNull = runBash(tmpDir, stateScript, ['set', 'pause-set', 'build_pause', 'null']);
-    const pausedNull = runBash(tmpDir, stateScript, ['get', 'pause-set', 'build_pause']);
+    const planReady = runNode(tmpDir, stateScript, ['get', 'pause-set', 'build_pause']);
+    const setNull = runNode(tmpDir, stateScript, ['set', 'pause-set', 'build_pause', 'null']);
+    const pausedNull = runNode(tmpDir, stateScript, ['get', 'pause-set', 'build_pause']);
 
     expect(setPlanReady.status).toBe(0);
     expect(planReady.stdout.trim()).toBe('plan-ready');
@@ -651,7 +555,7 @@ describeShell('comet shell scripts', () => {
       ].join('\n'),
     );
 
-    const result = runBash(tmpDir, guardScript, ['invalid-build-pause', 'build']);
+    const result = runNode(tmpDir, guardScript, ['invalid-build-pause', 'build']);
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("build_pause='paused' is not valid");
@@ -682,7 +586,7 @@ describeShell('comet shell scripts', () => {
       JSON.stringify({ scripts: { build: 'node -e "process.exit(0)"' } }),
     );
 
-    const result = runBash(tmpDir, guardScript, ['direct-full', 'build']);
+    const result = runNode(tmpDir, guardScript, ['direct-full', 'build']);
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('[FAIL] build_mode allowed for workflow');
@@ -715,7 +619,7 @@ describeShell('comet shell scripts', () => {
       JSON.stringify({ scripts: { build: 'node -e "process.exit(0)"' } }),
     );
 
-    const result = runBash(tmpDir, guardScript, ['unfinished-tasks', 'build']);
+    const result = runNode(tmpDir, guardScript, ['unfinished-tasks', 'build']);
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('[FAIL] tasks.md all tasks checked');
@@ -744,7 +648,7 @@ describeShell('comet shell scripts', () => {
       ].join('\n'),
     );
 
-    const result = runBash(tmpDir, stateScript, [
+    const result = runNode(tmpDir, stateScript, [
       'transition',
       'direct-full-transition',
       'build-complete',
@@ -779,7 +683,7 @@ describeShell('comet shell scripts', () => {
       JSON.stringify({ scripts: { build: 'node -e "process.exit(0)"' } }),
     );
 
-    const result = runBash(tmpDir, guardScript, ['direct-full-override', 'build']);
+    const result = runNode(tmpDir, guardScript, ['direct-full-override', 'build']);
 
     expect(result.status).toBe(0);
     expect(result.stderr).toContain('[PASS] build_mode allowed for workflow');
@@ -814,7 +718,7 @@ describeShell('comet shell scripts', () => {
       JSON.stringify({ scripts: { build: 'node -e "process.exit(0)"' } }),
     );
 
-    const result = runBash(tmpDir, guardScript, ['configured-build', 'build']);
+    const result = runNode(tmpDir, guardScript, ['configured-build', 'build']);
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('configured failure');
@@ -841,26 +745,26 @@ describeShell('comet shell scripts', () => {
       ].join('\n'),
     );
 
-    const set = runBash(tmpDir, stateScript, [
+    const set = runNode(tmpDir, stateScript, [
       'set',
       'command-metacharacters',
       'build_command',
       command,
     ]);
-    const get = runBash(tmpDir, stateScript, ['get', 'command-metacharacters', 'build_command']);
+    const get = runNode(tmpDir, stateScript, ['get', 'command-metacharacters', 'build_command']);
 
     expect(set.status).toBe(0);
     expect(get.stdout.trim()).toBe(command);
   });
 
-  it('keeps shell scripts portable across GNU and BSD sed', async () => {
+  it('keeps node scripts portable across GNU and BSD sed', async () => {
     for (const name of [
-      'comet-env.sh',
-      'comet-state.sh',
-      'comet-archive.sh',
-      'comet-guard.sh',
-      'comet-handoff.sh',
-      'comet-yaml-validate.sh',
+      'comet-env.js',
+      'comet-state.js',
+      'comet-archive.js',
+      'comet-guard.js',
+      'comet-handoff.js',
+      'comet-yaml-validate.js',
     ]) {
       const content = await fs.readFile(path.join(tmpDir, 'scripts', name), 'utf-8');
 
@@ -868,44 +772,10 @@ describeShell('comet shell scripts', () => {
     }
   });
 
-  it('keeps optional YAML field reads safe under pipefail', async () => {
-    for (const name of ['comet-state.sh', 'comet-guard.sh']) {
-      const content = await fs.readFile(path.join(tmpDir, 'scripts', name), 'utf-8');
-
-      expect(content).toMatch(/grep "\^\$\{field\}:" "\$[a-z_]+".*\|\| true\)/);
-    }
-  });
-
-  it('guards bash uname detection when bash cannot be spawned', async () => {
-    const files = [
-      path.resolve('scripts', 'run-bats.js'),
-      path.resolve('test', 'ts', 'comet-scripts.test.ts'),
-    ];
-
-    for (const file of files) {
-      const content = await fs.readFile(file, 'utf-8');
-
-      expect(content).toContain(".stdout || ''");
-    }
-  });
-
-  it('uses COMET_BASH for nested script calls when PATH bash is unusable', async () => {
-    const fakeBin = path.join(tmpDir, 'fake-bin');
-    await fs.mkdir(fakeBin, { recursive: true });
-    const fakeBash = path.join(fakeBin, 'bash');
-    await writeFile(
-      fakeBash,
-      [
-        '#!/bin/sh',
-        'echo "bad WSL bash" >&2',
-        'exit 127',
-        '',
-      ].join('\n'),
-    );
-    await fs.chmod(fakeBash, 0o755);
+  it('keeps optional YAML field reads independent from shell pipefail behavior', async () => {
     await createChange(
       tmpDir,
-      'nested-bash',
+      'optional-fields',
       [
         'workflow: full',
         'phase: open',
@@ -922,35 +792,18 @@ describeShell('comet shell scripts', () => {
       ].join('\n'),
     );
 
-    const result = spawnSync('bash', [
-      '-lc',
-      [
-        'COMET_BASH="/bin/bash"',
-        `PATH="${toBashPath(fakeBin)}:$PATH"`,
-        'export COMET_BASH PATH',
-        `/bin/bash "${toBashPath(guardScript)}" nested-bash open --apply`,
-      ].join('; '),
-    ], {
-      cwd: tmpDir,
-      encoding: 'utf-8',
-    });
-    const yaml = await fs.readFile(
-      path.join(tmpDir, 'openspec', 'changes', 'nested-bash', '.comet.yaml'),
-      'utf-8',
-    );
+    const result = runNode(tmpDir, stateScript, ['get', 'optional-fields', 'direct_override']);
 
-    expect(result.status, result.stderr).toBe(0);
-    expect(result.stderr).not.toContain('bad WSL bash');
-    expect(yaml).toContain('phase: design');
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe('\n');
   }, 20_000);
 
-  it('does not use PATH bash for nested Comet script calls', async () => {
-    for (const name of ['comet-archive.sh', 'comet-guard.sh', 'comet-handoff.sh']) {
+  it('uses node executable for nested Comet script calls', async () => {
+    for (const name of ['comet-archive.js', 'comet-guard.js', 'comet-handoff.js']) {
       const content = await fs.readFile(path.join(tmpDir, 'scripts', name), 'utf-8');
 
-      expect(content, `${name} should use COMET_BASH for nested scripts`).not.toMatch(
-        /\bbash\s+"?\$(?:STATE_SH|state_sh|validate_script)/,
-      );
+      expect(content, `${name} should invoke nested scripts through runNode`).toContain('runNode');
+      expect(content, `${name} should not shell out to bash for nested scripts`).not.toMatch(/\bbash\b/);
     }
   });
 
@@ -983,7 +836,7 @@ describeShell('comet shell scripts', () => {
       JSON.stringify({ scripts: { build: 'node -e "process.exit(0)"' } }),
     );
 
-    const result = runBash(tmpDir, guardScript, ['root-configured-build', 'build']);
+    const result = runNode(tmpDir, guardScript, ['root-configured-build', 'build']);
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('root configured failure');
@@ -1024,7 +877,7 @@ describeShell('comet shell scripts', () => {
       JSON.stringify({ scripts: { build: 'node -e "process.exit(0)"' } }),
     );
 
-    const result = runBash(tmpDir, guardScript, ['configured-verify', 'verify']);
+    const result = runNode(tmpDir, guardScript, ['configured-verify', 'verify']);
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('verify configured failure');
@@ -1050,14 +903,14 @@ describeShell('comet shell scripts', () => {
       ].join('\n'),
     );
 
-    const result = runBash(tmpDir, guardScript, ['2026-05-21-done-change', 'archive']);
+    const result = runNode(tmpDir, guardScript, ['2026-05-21-done-change', 'archive']);
 
     expect(result.status).toBe(0);
     expect(result.stderr).toContain('ALL CHECKS PASSED');
   });
 
   it('reports accurate archive step counts when syncing and annotating', async () => {
-    const archiveScript = path.join(tmpDir, 'scripts', 'comet-archive.sh');
+    const archiveScript = path.join(tmpDir, 'scripts', 'comet-archive.js');
     await createChange(
       tmpDir,
       'ready-to-archive',
@@ -1097,7 +950,7 @@ describeShell('comet shell scripts', () => {
       'delta spec\n',
     );
 
-    const result = runBash(tmpDir, archiveScript, ['ready-to-archive']);
+    const result = runNode(tmpDir, archiveScript, ['ready-to-archive']);
 
     expect(result.status).toBe(0);
     expect(result.stderr).toContain('Archive complete. 7/7 steps succeeded.');
@@ -1144,8 +997,8 @@ describeShell('comet shell scripts', () => {
     execFileSync('git', ['add', '.'], { cwd: tmpDir });
     execFileSync('git', ['commit', '-m', 'large change'], { cwd: tmpDir, stdio: 'ignore' });
 
-    const result = runBash(tmpDir, stateScript, ['scale', 'large-change']);
-    const mode = runBash(tmpDir, stateScript, ['get', 'large-change', 'verify_mode']);
+    const result = runNode(tmpDir, stateScript, ['scale', 'large-change']);
+    const mode = runNode(tmpDir, stateScript, ['get', 'large-change', 'verify_mode']);
 
     expect(result.status).toBe(0);
     expect(mode.stdout.trim()).toBe('full');
@@ -1171,8 +1024,8 @@ describeShell('comet shell scripts', () => {
       ].join('\n'),
     );
 
-    const result = runBash(tmpDir, stateScript, ['transition', 'full-change', 'open-complete']);
-    const phase = runBash(tmpDir, stateScript, ['get', 'full-change', 'phase']);
+    const result = runNode(tmpDir, stateScript, ['transition', 'full-change', 'open-complete']);
+    const phase = runNode(tmpDir, stateScript, ['get', 'full-change', 'phase']);
 
     expect(result.status).toBe(0);
     expect(phase.stdout.trim()).toBe('design');
@@ -1198,8 +1051,8 @@ describeShell('comet shell scripts', () => {
       ].join('\n'),
     );
 
-    const result = runBash(tmpDir, stateScript, ['transition', 'tweak-change', 'open-complete']);
-    const phase = runBash(tmpDir, stateScript, ['get', 'tweak-change', 'phase']);
+    const result = runNode(tmpDir, stateScript, ['transition', 'tweak-change', 'open-complete']);
+    const phase = runNode(tmpDir, stateScript, ['get', 'tweak-change', 'phase']);
 
     expect(result.status).toBe(0);
     expect(phase.stdout.trim()).toBe('build');
@@ -1227,10 +1080,10 @@ describeShell('comet shell scripts', () => {
       ].join('\n'),
     );
 
-    const fail = runBash(tmpDir, stateScript, ['transition', 'verify-change', 'verify-fail']);
-    const failedPhase = runBash(tmpDir, stateScript, ['get', 'verify-change', 'phase']);
-    const failedResult = runBash(tmpDir, stateScript, ['get', 'verify-change', 'verify_result']);
-    const failedBranchStatus = runBash(tmpDir, stateScript, [
+    const fail = runNode(tmpDir, stateScript, ['transition', 'verify-change', 'verify-fail']);
+    const failedPhase = runNode(tmpDir, stateScript, ['get', 'verify-change', 'phase']);
+    const failedResult = runNode(tmpDir, stateScript, ['get', 'verify-change', 'verify_result']);
+    const failedBranchStatus = runNode(tmpDir, stateScript, [
       'get',
       'verify-change',
       'branch_status',
@@ -1241,24 +1094,24 @@ describeShell('comet shell scripts', () => {
     expect(failedResult.stdout.trim()).toBe('fail');
     expect(failedBranchStatus.stdout.trim()).toBe('pending');
 
-    runBash(tmpDir, stateScript, ['set', 'verify-change', 'phase', 'verify']);
-    runBash(tmpDir, stateScript, ['set', 'verify-change', 'verify_result', 'pending']);
+    runNode(tmpDir, stateScript, ['set', 'verify-change', 'phase', 'verify']);
+    runNode(tmpDir, stateScript, ['set', 'verify-change', 'verify_result', 'pending']);
     await writeFile(
       path.join(tmpDir, 'docs', 'superpowers', 'reports', 'verify-change.md'),
       'PASS\n',
     );
-    runBash(tmpDir, stateScript, [
+    runNode(tmpDir, stateScript, [
       'set',
       'verify-change',
       'verification_report',
       'docs/superpowers/reports/verify-change.md',
     ]);
-    runBash(tmpDir, stateScript, ['set', 'verify-change', 'branch_status', 'handled']);
+    runNode(tmpDir, stateScript, ['set', 'verify-change', 'branch_status', 'handled']);
 
-    const pass = runBash(tmpDir, stateScript, ['transition', 'verify-change', 'verify-pass']);
-    const passedPhase = runBash(tmpDir, stateScript, ['get', 'verify-change', 'phase']);
-    const passedResult = runBash(tmpDir, stateScript, ['get', 'verify-change', 'verify_result']);
-    const verifiedAt = runBash(tmpDir, stateScript, ['get', 'verify-change', 'verified_at']);
+    const pass = runNode(tmpDir, stateScript, ['transition', 'verify-change', 'verify-pass']);
+    const passedPhase = runNode(tmpDir, stateScript, ['get', 'verify-change', 'phase']);
+    const passedResult = runNode(tmpDir, stateScript, ['get', 'verify-change', 'verify_result']);
+    const verifiedAt = runNode(tmpDir, stateScript, ['get', 'verify-change', 'verified_at']);
 
     expect(pass.status).toBe(0);
     expect(passedPhase.stdout.trim()).toBe('archive');
@@ -1292,8 +1145,8 @@ describeShell('comet shell scripts', () => {
       JSON.stringify({ scripts: { build: 'node -e "process.exit(0)"' } }),
     );
 
-    const result = runBash(tmpDir, guardScript, ['guard-verify', 'verify', '--apply']);
-    const phase = runBash(tmpDir, stateScript, ['get', 'guard-verify', 'phase']);
+    const result = runNode(tmpDir, guardScript, ['guard-verify', 'verify', '--apply']);
+    const phase = runNode(tmpDir, stateScript, ['get', 'guard-verify', 'phase']);
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('[FAIL] verification_report exists');
@@ -1331,9 +1184,9 @@ describeShell('comet shell scripts', () => {
       JSON.stringify({ scripts: { build: 'node -e "process.exit(0)"' } }),
     );
 
-    const result = runBash(tmpDir, guardScript, ['guard-verify', 'verify', '--apply']);
-    const phase = runBash(tmpDir, stateScript, ['get', 'guard-verify', 'phase']);
-    const verifyResult = runBash(tmpDir, stateScript, ['get', 'guard-verify', 'verify_result']);
+    const result = runNode(tmpDir, guardScript, ['guard-verify', 'verify', '--apply']);
+    const phase = runNode(tmpDir, stateScript, ['get', 'guard-verify', 'phase']);
+    const verifyResult = runNode(tmpDir, stateScript, ['get', 'guard-verify', 'verify_result']);
 
     expect(result.status).toBe(0);
     expect(phase.stdout.trim()).toBe('archive');
@@ -1360,7 +1213,7 @@ describeShell('comet shell scripts', () => {
       ].join('\n'),
     );
 
-    const result = runBash(tmpDir, stateScript, ['transition', 'wrong-phase', 'build-complete']);
+    const result = runNode(tmpDir, stateScript, ['transition', 'wrong-phase', 'build-complete']);
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('expected phase build');
@@ -1386,12 +1239,12 @@ describeShell('comet shell scripts', () => {
       ].join('\n'),
     );
 
-    const result = runBash(tmpDir, stateScript, [
+    const result = runNode(tmpDir, stateScript, [
       'transition',
       '2026-05-21-done-change',
       'archived',
     ]);
-    const archived = runBash(tmpDir, stateScript, ['get', '2026-05-21-done-change', 'archived']);
+    const archived = runNode(tmpDir, stateScript, ['get', '2026-05-21-done-change', 'archived']);
 
     expect(result.status).toBe(0);
     expect(archived.stdout.trim()).toBe('true');
@@ -1417,7 +1270,7 @@ describeShell('comet shell scripts', () => {
         ].join('\n'),
       );
 
-      const result = runBash(tmpDir, stateScript, ['check', 'recover-open', 'open', '--recover']);
+      const result = runNode(tmpDir, stateScript, ['check', 'recover-open', 'open', '--recover']);
 
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('Recovery Context: recover-open');
@@ -1449,7 +1302,7 @@ describeShell('comet shell scripts', () => {
         ['- [x] done task', '- [ ] pending task'].join('\n'),
       );
 
-      const result = runBash(tmpDir, stateScript, ['check', 'recover-build', 'build', '--recover']);
+      const result = runNode(tmpDir, stateScript, ['check', 'recover-build', 'build', '--recover']);
 
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('Phase: build');
@@ -1482,7 +1335,7 @@ describeShell('comet shell scripts', () => {
         ].join('\n'),
       );
 
-      const result = runBash(tmpDir, stateScript, [
+      const result = runNode(tmpDir, stateScript, [
         'check',
         'recover-plan-ready',
         'build',
@@ -1521,7 +1374,7 @@ describeShell('comet shell scripts', () => {
         ].join('\n'),
       );
 
-      const result = runBash(tmpDir, stateScript, [
+      const result = runNode(tmpDir, stateScript, [
         'check',
         'recover-verify',
         'verify',
@@ -1568,7 +1421,7 @@ describeShell('comet shell scripts', () => {
         '{}',
       );
 
-      const result = runBash(tmpDir, stateScript, [
+      const result = runNode(tmpDir, stateScript, [
         'check',
         'recover-design',
         'design',
@@ -1602,7 +1455,7 @@ describeShell('comet shell scripts', () => {
         ].join('\n'),
       );
 
-      const result = runBash(tmpDir, stateScript, [
+      const result = runNode(tmpDir, stateScript, [
         'check',
         'recover-no-tasks',
         'build',
@@ -1636,7 +1489,7 @@ describeShell('comet shell scripts', () => {
         ['- [x] task 1', '- [x] task 2'].join('\n'),
       );
 
-      const result = runBash(tmpDir, stateScript, [
+      const result = runNode(tmpDir, stateScript, [
         'check',
         'recover-build-done',
         'build',
@@ -1671,7 +1524,7 @@ describeShell('comet shell scripts', () => {
         ].join('\n'),
       );
 
-      const result = runBash(tmpDir, stateScript, [
+      const result = runNode(tmpDir, stateScript, [
         'check',
         'recover-archive',
         'archive',
@@ -1705,7 +1558,7 @@ describeShell('comet shell scripts', () => {
         ].join('\n'),
       );
 
-      const result = runBash(tmpDir, stateScript, ['check', 'recover-normal', 'open']);
+      const result = runNode(tmpDir, stateScript, ['check', 'recover-normal', 'open']);
 
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('Entry Check');

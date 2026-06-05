@@ -34,27 +34,6 @@ jobs:
 
       - run: pnpm test:coverage
 
-  shellcheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Run shellcheck
-        uses: ludeeus/action-shellcheck@2.0.0
-        with:
-          scandir: ./assets/skills/comet/scripts
-
-  bats-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install bats
-        run: sudo apt-get install -y bats
-
-      - name: Run shell tests
-        run: bats test/shell/*.bats
-
   script-smoke:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -76,9 +55,6 @@ jobs:
 
       - name: Run Comet script smoke tests
         run: pnpm test -- test/ts/comet-scripts.test.ts
-
-      - name: Run portable shell tests
-        run: pnpm test:shell
 
   init-e2e:
     runs-on: ${{ matrix.os }}
@@ -132,11 +108,13 @@ jobs:
                     .iflow/skills .pi/skills .qoder/skills .agents/skills \
                     .bob/skills .forge/skills .trae/skills .github/skills; do
             check_file "$PROJ/$sd/comet/SKILL.md"
-            check_file "$PROJ/$sd/comet/scripts/comet-guard.sh"
-            check_file "$PROJ/$sd/comet/scripts/comet-state.sh"
-            check_file "$PROJ/$sd/comet/scripts/comet-handoff.sh"
-            check_file "$PROJ/$sd/comet/scripts/comet-yaml-validate.sh"
-            check_file "$PROJ/$sd/comet/scripts/comet-archive.sh"
+            check_file "$PROJ/$sd/comet/scripts/comet-guard.js"
+            check_file "$PROJ/$sd/comet/scripts/comet-state.js"
+            check_file "$PROJ/$sd/comet/scripts/comet-handoff.js"
+            check_file "$PROJ/$sd/comet/scripts/comet-yaml-validate.js"
+            check_file "$PROJ/$sd/comet/scripts/comet-archive.js"
+            check_file "$PROJ/$sd/comet/scripts/comet-env.js"
+            check_file "$PROJ/$sd/comet/scripts/comet-lib.js"
           done
           echo "All 28 platforms project Comet skills: OK"
         shell: bash
@@ -220,11 +198,13 @@ jobs:
                     .iflow/skills .pi/skills .qoder/skills .gemini/antigravity/skills \
                     .bob/skills .forge/skills .trae/skills .github/skills; do
             check_file "$HOME_DIR/$sd/comet/SKILL.md"
-            check_file "$HOME_DIR/$sd/comet/scripts/comet-guard.sh"
-            check_file "$HOME_DIR/$sd/comet/scripts/comet-state.sh"
-            check_file "$HOME_DIR/$sd/comet/scripts/comet-handoff.sh"
-            check_file "$HOME_DIR/$sd/comet/scripts/comet-yaml-validate.sh"
-            check_file "$HOME_DIR/$sd/comet/scripts/comet-archive.sh"
+            check_file "$HOME_DIR/$sd/comet/scripts/comet-guard.js"
+            check_file "$HOME_DIR/$sd/comet/scripts/comet-state.js"
+            check_file "$HOME_DIR/$sd/comet/scripts/comet-handoff.js"
+            check_file "$HOME_DIR/$sd/comet/scripts/comet-yaml-validate.js"
+            check_file "$HOME_DIR/$sd/comet/scripts/comet-archive.js"
+            check_file "$HOME_DIR/$sd/comet/scripts/comet-env.js"
+            check_file "$HOME_DIR/$sd/comet/scripts/comet-lib.js"
           done
           echo "All 28 platforms global Comet skills: OK"
         shell: bash

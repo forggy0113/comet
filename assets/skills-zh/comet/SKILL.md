@@ -67,8 +67,8 @@ agent 做决策只需读本节，参考附录按需查阅。
   - 若 `build_pause: plan-ready` 但 plan 文件缺失，回到 `/comet-build` 处理状态损坏或重新生成 plan
   - 若 `build_mode` 或 `isolation` 未设置，回到 `/comet-build` 对应步骤补充后再执行
   - 若均已设置，读取 tasks.md 的下一个未勾选任务继续
-- 若 `phase: verify` 且 `verify_result: fail`，进入验证失败决策阻塞点：暂停并询问用户修复或接受偏差；用户选择修复后才运行 `"$COMET_BASH" "$COMET_STATE" transition <name> verify-fail` 并调用 `/comet-build`
-- 若 `phase: open` 但 proposal/design/tasks 已完整，先运行 `"$COMET_BASH" "$COMET_GUARD" <change-name> open --apply` 修正状态，再继续判定
+- 若 `phase: verify` 且 `verify_result: fail`，进入验证失败决策阻塞点：暂停并询问用户修复或接受偏差；用户选择修复后才运行 `node "$COMET_STATE" transition <name> verify-fail` 并调用 `/comet-build`
+- 若 `phase: open` 但 proposal/design/tasks 已完整，先运行 `node "$COMET_GUARD" <change-name> open --apply` 修正状态，再继续判定
 - 若 `phase: archive`，只允许调用 `/comet-archive`；归档成功后 change 会移动到 archive 目录，不再对原活跃目录运行 guard
 
 **Step 2: 阶段判定**（按顺序，命中即停）
@@ -105,7 +105,7 @@ agent 做决策只需读本节，参考附录按需查阅。
 |------|---------|
 | `openspec list --json` 失败 | 检查 openspec 是否已安装，提示 `openspec init` |
 | 子 skill 不可用 | 停止流程，提示安装或启用对应 skill |
-| `.comet.yaml` 格式异常或缺失 | 以文件状态为准，用 `"$COMET_BASH" "$COMET_STATE" set` 修正后继续 |
+| `.comet.yaml` 格式异常或缺失 | 以文件状态为准，用 `node "$COMET_STATE" set` 修正后继续 |
 | 构建/测试失败 | 返回 build 阶段修复，不进入 verify |
 | change 目录结构不完整 | 按 `comet-open` 产物要求补齐 |
 
@@ -226,24 +226,28 @@ archived: false
 - `build → verify` 前，`build_mode` 必须已选择
 - `build_mode: direct` 默认只允许 `hotfix` / `tweak`；full workflow 需要 `direct_override: true`
 - `build_pause` 不是执行方式，不得写入 `build_mode`
-- 这些约束同时存在于 `comet-guard.sh build --apply` 和 `comet-state.sh transition <name> build-complete`
+- 这些约束同时存在于 `comet-guard.js build --apply` 和 `comet-state.js transition <name> build-complete`
 
 ### 脚本定位
 
 Comet 脚本随 skill 包分发在 `comet/scripts/` 下。**不硬编码路径** — 定位一次，缓存到环境变量：
 
 ```bash
-COMET_ENV="${COMET_ENV:-$(find . "$HOME"/.*/skills "$HOME/.config" "$HOME/.gemini" -path '*/comet/scripts/comet-env.sh' -type f -print -quit 2>/dev/null)}"
+COMET_ENV="${COMET_ENV:-$(find . "$HOME"/.*/skills "$HOME/.config" "$HOME/.gemini" -path '*/comet/scripts/comet-env.js' -type f -print -quit 2>/dev/null)}"
 if [ -z "$COMET_ENV" ]; then
-  echo "ERROR: comet-env.sh not found. Ensure the comet skill is installed." >&2
+  echo "ERROR: comet-env.js not found. Ensure the comet skill is installed." >&2
   return 1
 fi
-. "$COMET_ENV"
+COMET_ENV_JSON="$(node "$COMET_ENV")"
+COMET_STATE="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_STATE))")"
+COMET_GUARD="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_GUARD))")"
+COMET_HANDOFF="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_HANDOFF))")"
+COMET_ARCHIVE="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_ARCHIVE))")"
 
 # 脚本定位失败时停止流程
 if [ -z "$COMET_GUARD" ] || [ -z "$COMET_STATE" ] || [ -z "$COMET_HANDOFF" ] || [ -z "$COMET_ARCHIVE" ]; then
   echo "ERROR: Comet scripts not found. Ensure the comet skill is installed." >&2
-  echo "Expected path pattern: */comet/scripts/comet-*.sh under project or platform skill directories" >&2
+  echo "Expected path pattern: */comet/scripts/comet-*.js under project or platform skill directories" >&2
   return 1
 fi
 ```
@@ -251,24 +255,24 @@ fi
 **自动状态更新**：guard 支持 `--apply` 参数，验证通过后自动更新 `.comet.yaml` 状态字段：
 
 ```bash
-"$COMET_BASH" "$COMET_GUARD" <change-name> <phase> --apply
+node "$COMET_GUARD" <change-name> <phase> --apply
 ```
 
 `--apply` 内部委托给 `comet-state transition`。需要直接表达状态事件时使用：
 
 ```bash
-"$COMET_BASH" "$COMET_STATE" transition <change-name> open-complete
-"$COMET_BASH" "$COMET_STATE" transition <change-name> design-complete
-"$COMET_BASH" "$COMET_STATE" transition <change-name> build-complete
-"$COMET_BASH" "$COMET_STATE" transition <change-name> verify-pass
-"$COMET_BASH" "$COMET_STATE" transition <change-name> verify-fail
-"$COMET_BASH" "$COMET_STATE" transition <archive-name> archived
+node "$COMET_STATE" transition <change-name> open-complete
+node "$COMET_STATE" transition <change-name> design-complete
+node "$COMET_STATE" transition <change-name> build-complete
+node "$COMET_STATE" transition <change-name> verify-pass
+node "$COMET_STATE" transition <change-name> verify-fail
+node "$COMET_STATE" transition <archive-name> archived
 ```
 
 **归档脚本**：一键完成归档全部步骤：
 
 ```bash
-"$COMET_BASH" "$COMET_ARCHIVE" <change-name>
+node "$COMET_ARCHIVE" <change-name>
 ```
 
 加载 comet 后，agent 应执行以上变量赋值一次，后续全程复用 `$COMET_GUARD`、`$COMET_STATE`、`$COMET_HANDOFF`、`$COMET_ARCHIVE`。
@@ -299,7 +303,7 @@ docs/superpowers/                      # Superpowers — HOW
 
 1. **brainstorming 不可跳过** — 每次变更必须经过深度设计（hotfix 和 tweak 除外）
 2. **delta spec 是活文档** — 阶段 3 期间可自由修改，归档时同步
-3. **交接包由脚本生成** — OpenSpec → Superpowers 的上下文必须通过 `comet-handoff.sh` 生成 compact 可追溯摘录（必要时 `--full`），并由 guard 校验 source/hash/mode
+3. **交接包由脚本生成** — OpenSpec → Superpowers 的上下文必须通过 `comet-handoff.js` 生成 compact 可追溯摘录（必要时 `--full`），并由 guard 校验 source/hash/mode
 4. **保持 tasks.md 同步** — 完成一个勾一个
 5. **频繁提交** — 每个任务一次提交，message 体现设计意图
 6. **先验证再归档** — `/comet-verify` 通过后才执行 `/comet-archive`

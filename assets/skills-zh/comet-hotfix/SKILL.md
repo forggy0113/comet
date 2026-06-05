@@ -23,12 +23,16 @@ description: "Comet 预设路径：Bug fix / 热修复。跳过 brainstorming，
 开始前先定位 Comet 脚本：
 
 ```bash
-COMET_ENV="${COMET_ENV:-$(find . "$HOME"/.*/skills "$HOME/.config" "$HOME/.gemini" -path '*/comet/scripts/comet-env.sh' -type f -print -quit 2>/dev/null)}"
+COMET_ENV="${COMET_ENV:-$(find . "$HOME"/.*/skills "$HOME/.config" "$HOME/.gemini" -path '*/comet/scripts/comet-env.js' -type f -print -quit 2>/dev/null)}"
 if [ -z "$COMET_ENV" ]; then
-  echo "ERROR: comet-env.sh not found. Ensure the comet skill is installed." >&2
+  echo "ERROR: comet-env.js not found. Ensure the comet skill is installed." >&2
   return 1
 fi
-. "$COMET_ENV"
+COMET_ENV_JSON="$(node "$COMET_ENV")"
+COMET_STATE="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_STATE))")"
+COMET_GUARD="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_GUARD))")"
+COMET_HANDOFF="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_HANDOFF))")"
+COMET_ARCHIVE="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_ARCHIVE))")"
 ```
 
 ### 1. 快速开启（preset open）
@@ -54,19 +58,19 @@ Language: 使用触发本次工作流的用户请求语言输出。
 初始化 Comet 状态文件：
 
 ```bash
-"$COMET_BASH" "$COMET_STATE" init <name> hotfix
+node "$COMET_STATE" init <name> hotfix
 ```
 
 初始化后验证状态：
 
 ```bash
-"$COMET_BASH" "$COMET_STATE" check <name> open
+node "$COMET_STATE" check <name> open
 ```
 
 阶段守卫完成 open → build 过渡：
 
 ```bash
-"$COMET_BASH" "$COMET_GUARD" <change-name> open --apply
+node "$COMET_GUARD" <change-name> open --apply
 ```
 
 ### 2. 直接构建（preset build）
@@ -105,7 +109,7 @@ Language: 使用触发本次工作流的用户请求语言输出。
 根因确认消除后，运行阶段守卫完成 build → verify 过渡：
 
 ```bash
-"$COMET_BASH" "$COMET_GUARD" <change-name> build --apply
+node "$COMET_GUARD" <change-name> build --apply
 ```
 
 状态文件自动更新为 `phase: verify`、`verify_result: pending`，然后进入验证。
@@ -162,7 +166,7 @@ Hotfix 流程为 **一次性连续执行**。调用 `/comet-hotfix` 后，agent 
 用户确认升级后，**必须先更新 workflow 字段**再进入完整流程：
 
 ```bash
-"$COMET_BASH" "$COMET_STATE" set <name> workflow full
+node "$COMET_STATE" set <name> workflow full
 ```
 
 然后在当前 change 基础上补充 Design Doc：**立即使用 Skill 工具加载 `comet-design` skill**，后续正常走完整流程。若用户不确认升级，停止 hotfix 并报告当前变更已超出 hotfix 适用范围。
@@ -174,4 +178,4 @@ Hotfix 流程为 **一次性连续执行**。调用 `/comet-hotfix` 后，agent 
 - Bug 已修复，测试通过
 - change 已归档
 - 如有 spec 变更，已同步到 main spec
-- **阶段守卫**：build → verify 前运行 `"$COMET_BASH" "$COMET_GUARD" <change-name> build --apply`，verify → archive 前按 `/comet-verify` 规则运行 `"$COMET_BASH" "$COMET_GUARD" <change-name> verify --apply`
+- **阶段守卫**：build → verify 前运行 `node "$COMET_GUARD" <change-name> build --apply`，verify → archive 前按 `/comet-verify` 规则运行 `node "$COMET_GUARD" <change-name> verify --apply`
