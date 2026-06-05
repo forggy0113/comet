@@ -53,6 +53,14 @@ src/
 │   ├── skills.ts      # Skill file operations
 │   ├── openspec.ts    # OpenSpec installation
 │   └── superpowers.ts # Superpowers installation
+├── scripts/           # Comet Node.js scripts (phase guards, state, archive)
+│   ├── comet-lib.ts   # Shared utilities
+│   ├── comet-state.ts # State machine (.comet.yaml)
+│   ├── comet-guard.ts # Phase guard checks
+│   ├── comet-handoff.ts # Design handoff
+│   ├── comet-archive.ts # Change archive
+│   ├── comet-env.ts   # Environment discovery
+│   └── comet-yaml-validate.ts # YAML validation
 └── utils/
     └── file-system.ts # File I/O utilities
 ```

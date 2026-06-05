@@ -6,9 +6,9 @@ import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
 
-const runTsc = (args = []) => {
+const runTsc = (project, args = []) => {
   const tscPath = require.resolve('typescript/bin/tsc');
-  execFileSync(process.execPath, [tscPath, ...args], { stdio: 'inherit' });
+  execFileSync(process.execPath, [tscPath, '--project', project, ...args], { stdio: 'inherit' });
 };
 
 console.log('Building Comet...\n');
@@ -18,12 +18,38 @@ if (existsSync('dist')) {
   rmSync('dist', { recursive: true, force: true });
 }
 
-console.log('Compiling TypeScript...');
+console.log('Compiling src/ TypeScript...');
 try {
-  runTsc(['--version']);
-  runTsc();
-  console.log('\nBuild completed successfully!');
-} catch (error) {
+  runTsc('tsconfig.json', ['--version']);
+  runTsc('tsconfig.json');
+} catch {
   console.error('\nBuild failed!');
   process.exit(1);
 }
+
+console.log('\nCleaning script output directory...');
+if (existsSync('assets/skills/comet/scripts')) {
+  const scriptFiles = [
+    'comet-lib.js',
+    'comet-env.js',
+    'comet-guard.js',
+    'comet-handoff.js',
+    'comet-archive.js',
+    'comet-yaml-validate.js',
+    'comet-state.js',
+  ];
+  for (const f of scriptFiles) {
+    const p = `assets/skills/comet/scripts/${f}`;
+    if (existsSync(p)) rmSync(p, { force: true });
+  }
+}
+
+console.log('Compiling scripts/ TypeScript...');
+try {
+  runTsc('src/scripts/tsconfig.json');
+} catch {
+  console.error('\nScript compilation failed!');
+  process.exit(1);
+}
+
+console.log('\nBuild completed successfully!');

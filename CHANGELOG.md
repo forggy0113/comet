@@ -6,7 +6,7 @@ All notable changes to @rpamis/comet will be documented in this file.
 
 ### Added
 
-- **Cross-platform Comet Node scripts**: Added Node.js implementations for Comet state, guard, handoff, archive, YAML validation, environment discovery, and shared script utilities so bundled automation runs without Bash-specific script files.
+- **TypeScript Comet scripts**: Converted script source to TypeScript (`src/scripts/`) with strict type annotations; `build.js` compiles them to JavaScript in `assets/skills/comet/scripts/` for distribution.
 - **Plan-ready build pause state**: Added `build_pause` as a dedicated build-phase pause marker so Comet can stop after plan generation without confusing the pause with the actual execution method.
 - **Plan-ready pause design**: Added a design record for the model-switching pause workflow, covering recovery behavior, stale pause handling, and plan-missing remediation.
 

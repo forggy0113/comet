@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'child_process';
 import { promises as fs } from 'fs';
+import { mkdirSync } from 'fs';
 import os from 'os';
 import path from 'path';
 
@@ -22,9 +23,10 @@ async function readManifest() {
 }
 
 function mockExternalSuccess() {
-  mockedExecFileSync.mockImplementation((command: unknown, args?: unknown) => {
+  mockedExecFileSync.mockImplementation((command: unknown, args?: unknown, options?: unknown) => {
     const cmd = String(command);
     const cmdArgs = Array.isArray(args) ? args.map((arg) => String(arg)) : [];
+    const opts = options as { cwd?: string } | undefined;
     if ((cmd === 'which' || cmd === 'where') && cmdArgs[0] === 'openspec') {
       return Buffer.from('/usr/bin/openspec');
     }
@@ -32,6 +34,12 @@ function mockExternalSuccess() {
       return Buffer.from('ok');
     }
     if ((cmd === 'npx' || cmd === 'npx.cmd') && cmdArgs[0] === 'skills') {
+      if (opts?.cwd && opts.cwd.includes('comet-lingma-superpowers-')) {
+        const skillsDir = path.join(opts.cwd, '.claude', 'skills');
+        mkdirSync(skillsDir, { recursive: true });
+        mkdirSync(path.join(skillsDir, 'brainstorming'), { recursive: true });
+        mkdirSync(path.join(skillsDir, 'using-superpowers'), { recursive: true });
+      }
       return Buffer.from('installed');
     }
     return Buffer.from('');
@@ -167,6 +175,7 @@ describe('comet init E2E', () => {
 
   it('installs all platforms from clean directory with --yes', async () => {
     mockExternalSuccess();
+    vi.spyOn(os, 'homedir').mockReturnValue(tmpDir);
 
     const { initCommand } = await import('../../src/commands/init.js');
     const result = await captureJsonOutput(() => initCommand(tmpDir, { yes: true, json: true }));

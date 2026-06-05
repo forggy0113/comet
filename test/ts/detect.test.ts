@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
@@ -124,10 +124,18 @@ describe('detect', () => {
       expect(opencode).toBeDefined();
       if (!opencode) return;
 
+      const origHomedir = os.homedir;
+      vi.spyOn(os, 'homedir').mockReturnValue(tmpDir);
+
       await fs.mkdir(path.join(tmpDir, '.opencode', 'skills', 'comet'), { recursive: true });
       await fs.mkdir(path.join(tmpDir, '.opencode', 'skills', 'comet-open'), { recursive: true });
 
-      expect(await hasSkills(tmpDir, opencode, 'comet')).toBe(false);
+      try {
+        expect(await hasSkills(tmpDir, opencode, 'comet')).toBe(false);
+      } finally {
+        vi.mocked(os.homedir).mockRestore();
+        os.homedir = origHomedir;
+      }
     });
 
     it('detects OpenCode Comet skills when matching slash commands exist', async () => {
@@ -135,13 +143,21 @@ describe('detect', () => {
       expect(opencode).toBeDefined();
       if (!opencode) return;
 
+      const origHomedir = os.homedir;
+      vi.spyOn(os, 'homedir').mockReturnValue(tmpDir);
+
       await fs.mkdir(path.join(tmpDir, '.opencode', 'skills', 'comet'), { recursive: true });
       await fs.mkdir(path.join(tmpDir, '.opencode', 'skills', 'comet-open'), { recursive: true });
       await fs.mkdir(path.join(tmpDir, '.opencode', 'commands'), { recursive: true });
       await fs.writeFile(path.join(tmpDir, '.opencode', 'commands', 'comet.md'), '');
       await fs.writeFile(path.join(tmpDir, '.opencode', 'commands', 'comet-open.md'), '');
 
-      expect(await hasSkills(tmpDir, opencode, 'comet')).toBe(true);
+      try {
+        expect(await hasSkills(tmpDir, opencode, 'comet')).toBe(true);
+      } finally {
+        vi.mocked(os.homedir).mockRestore();
+        os.homedir = origHomedir;
+      }
     });
 
     it('detects Antigravity global skills in the Gemini Antigravity directory', async () => {
