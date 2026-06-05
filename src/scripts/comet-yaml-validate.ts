@@ -44,13 +44,18 @@ if (!existsSync(yaml)) {
   const required = [
     'workflow',
     'phase',
-    'design_doc',
-    'plan',
     'build_mode',
+    'build_pause',
     'isolation',
     'verify_mode',
+    'design_doc',
+    'plan',
     'verify_result',
+    'verification_report',
+    'branch_status',
     'verified_at',
+    'created_at',
+    'base_ref',
     'archived',
   ];
   for (const field of required) {

@@ -7,33 +7,20 @@ npx vitest run                                   # 全量测试
 
 ## Comet Node 脚本规范
 
-<<<<<<< HEAD
 脚本源码位于 `src/scripts/`（TypeScript），经 `build.js` 编译输出到 `assets/skills/comet/scripts/`（JavaScript），必须跨平台兼容（macOS / Linux / Windows）：
 
 - 使用 TypeScript 实现（`src/scripts/*.ts`），构建时编译为 `.js`
-=======
-脚本位于 `assets/skills/comet/scripts/`，必须跨平台兼容（macOS / Linux / Windows）：
-
-- 使用 Node.js 实现，不新增 `.sh` wrapper
->>>>>>> eeac7a023b8ea6033b2606f7fd7d412881e7c398
 - 脚本间调用使用 `node <script>.js` 或共享 `runNode`
 - 用户配置的 `build_command` / `verify_command` 允许交给平台 shell 执行
 - 新增脚本必须加入 `beforeEach` 的拷贝列表和 manifest.json
 
 ## 脚本依赖关系
 
-```
-<<<<<<< HEAD
+```text
 comet-lib.ts ← comet-state.ts, comet-guard.ts, comet-handoff.ts, comet-archive.ts, comet-yaml-validate.ts, comet-env.ts
 comet-state.ts ← comet-guard.ts, comet-handoff.ts, comet-archive.ts
 comet-yaml-validate.ts ← comet-guard.ts (preflight 阶段)
 comet-handoff.ts ← comet-state.ts (写入 handoff_context/handoff_hash)
-=======
-comet-lib.js ← comet-state.js, comet-guard.js, comet-handoff.js, comet-archive.js, comet-yaml-validate.js, comet-env.js
-comet-state.js ← comet-guard.js, comet-handoff.js, comet-archive.js
-comet-yaml-validate.js ← comet-guard.js (preflight 阶段)
-comet-handoff.js ← comet-state.js (写入 handoff_context/handoff_hash)
->>>>>>> eeac7a023b8ea6033b2606f7fd7d412881e7c398
 ```
 
 新增共享工具函数时优先放入 `comet-lib.js`，避免各脚本行为分叉。

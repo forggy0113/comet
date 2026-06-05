@@ -71,7 +71,7 @@ function set(change: string, field: string, value: string, quiet: boolean = fals
   validateChangeName(change);
   const yaml = yamlFileFor(change);
   if (!existsSync(yaml)) fail(`.comet.yaml not found at ${yaml}`);
-  if (field === 'phase') {
+  if (field === 'phase' && !quiet) {
     yellow("WARNING: Setting 'phase' directly bypasses state machine constraints.");
     yellow('  Consider using: comet-state.js transition <change-name> <event>');
   } else if (!SET_FIELDS.has(field)) {

@@ -109,7 +109,7 @@ function annotateFrontmatter(file: string, extraFields: string): void {
     }
     next = out.join('\n');
   } else {
-    next = `---\narchived-with: ${archiveName}\n${extraFields ? `${extraFields}\n` : ''}status: final\n---\n${text}`;
+    next = `---\narchived-with: ${archiveName}\n${extraFields ? `${extraFields}\n` : ''}---\n${text}`;
   }
   writeFileSync(file, next);
   stepOk(`Annotated: ${file}`);
