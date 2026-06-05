@@ -124,8 +124,10 @@ describe('detect', () => {
       expect(opencode).toBeDefined();
       if (!opencode) return;
 
-      const origHomedir = os.homedir;
-      vi.spyOn(os, 'homedir').mockReturnValue(tmpDir);
+      const origHome = process.env.HOME;
+      const origUserProfile = process.env.USERPROFILE;
+      process.env.HOME = tmpDir;
+      process.env.USERPROFILE = tmpDir;
 
       await fs.mkdir(path.join(tmpDir, '.opencode', 'skills', 'comet'), { recursive: true });
       await fs.mkdir(path.join(tmpDir, '.opencode', 'skills', 'comet-open'), { recursive: true });
@@ -133,8 +135,8 @@ describe('detect', () => {
       try {
         expect(await hasSkills(tmpDir, opencode, 'comet')).toBe(false);
       } finally {
-        vi.mocked(os.homedir).mockRestore();
-        os.homedir = origHomedir;
+        process.env.HOME = origHome;
+        process.env.USERPROFILE = origUserProfile;
       }
     });
 
@@ -143,8 +145,10 @@ describe('detect', () => {
       expect(opencode).toBeDefined();
       if (!opencode) return;
 
-      const origHomedir = os.homedir;
-      vi.spyOn(os, 'homedir').mockReturnValue(tmpDir);
+      const origHome = process.env.HOME;
+      const origUserProfile = process.env.USERPROFILE;
+      process.env.HOME = tmpDir;
+      process.env.USERPROFILE = tmpDir;
 
       await fs.mkdir(path.join(tmpDir, '.opencode', 'skills', 'comet'), { recursive: true });
       await fs.mkdir(path.join(tmpDir, '.opencode', 'skills', 'comet-open'), { recursive: true });
@@ -155,8 +159,8 @@ describe('detect', () => {
       try {
         expect(await hasSkills(tmpDir, opencode, 'comet')).toBe(true);
       } finally {
-        vi.mocked(os.homedir).mockRestore();
-        os.homedir = origHomedir;
+        process.env.HOME = origHome;
+        process.env.USERPROFILE = origUserProfile;
       }
     });
 

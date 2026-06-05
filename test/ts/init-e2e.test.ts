@@ -175,7 +175,10 @@ describe('comet init E2E', () => {
 
   it('installs all platforms from clean directory with --yes', async () => {
     mockExternalSuccess();
-    vi.spyOn(os, 'homedir').mockReturnValue(tmpDir);
+    const origHome = process.env.HOME;
+    const origUserProfile = process.env.USERPROFILE;
+    process.env.HOME = tmpDir;
+    process.env.USERPROFILE = tmpDir;
 
     const { initCommand } = await import('../../src/commands/init.js');
     const result = await captureJsonOutput(() => initCommand(tmpDir, { yes: true, json: true }));
@@ -223,6 +226,9 @@ describe('comet init E2E', () => {
     await expect(
       fs.access(path.join(tmpDir, '.opencode', 'commands', 'comet-open.md')),
     ).resolves.toBeUndefined();
+
+    process.env.HOME = origHome;
+    process.env.USERPROFILE = origUserProfile;
   }, 20_000);
 
   it('installs Antigravity Comet skills to the Gemini global skills directory', async () => {
