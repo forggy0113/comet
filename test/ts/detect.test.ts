@@ -135,8 +135,10 @@ describe('detect', () => {
       try {
         expect(await hasSkills(tmpDir, opencode, 'comet')).toBe(false);
       } finally {
-        process.env.HOME = origHome;
-        process.env.USERPROFILE = origUserProfile;
+        if (origHome === undefined) delete process.env.HOME;
+        else process.env.HOME = origHome;
+        if (origUserProfile === undefined) delete process.env.USERPROFILE;
+        else process.env.USERPROFILE = origUserProfile;
       }
     });
 
@@ -159,8 +161,10 @@ describe('detect', () => {
       try {
         expect(await hasSkills(tmpDir, opencode, 'comet')).toBe(true);
       } finally {
-        process.env.HOME = origHome;
-        process.env.USERPROFILE = origUserProfile;
+        if (origHome === undefined) delete process.env.HOME;
+        else process.env.HOME = origHome;
+        if (origUserProfile === undefined) delete process.env.USERPROFILE;
+        else process.env.USERPROFILE = origUserProfile;
       }
     });
 
