@@ -18,13 +18,17 @@ description: "Comet 阶段 5：归档。用 /comet-archive 调用。同步 delta
 执行入口验证：
 
 ```bash
-COMET_ENV="${COMET_ENV:-$(find . "$HOME"/.*/skills "$HOME/.config" "$HOME/.gemini" -path '*/comet/scripts/comet-env.sh' -type f -print -quit 2>/dev/null)}"
+COMET_ENV="${COMET_ENV:-$(find . "$HOME"/.*/skills "$HOME/.config" "$HOME/.gemini" -path '*/comet/scripts/comet-env.js' -type f -print -quit 2>/dev/null)}"
 if [ -z "$COMET_ENV" ]; then
-  echo "ERROR: comet-env.sh not found. Ensure the comet skill is installed." >&2
+  echo "ERROR: comet-env.js not found. Ensure the comet skill is installed." >&2
   return 1
 fi
-. "$COMET_ENV"
-"$COMET_BASH" "$COMET_STATE" check <name> archive
+COMET_ENV_JSON="$(node "$COMET_ENV")"
+COMET_STATE="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_STATE))")"
+COMET_GUARD="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_GUARD))")"
+COMET_HANDOFF="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_HANDOFF))")"
+COMET_ARCHIVE="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_ARCHIVE))")"
+node "$COMET_STATE" check <name> archive
 ```
 
 验证通过后继续 Step 1。验证失败时脚本会输出具体失败原因。
@@ -38,7 +42,7 @@ fi
 运行归档脚本，自动完成以下全部步骤：
 
 ```bash
-"$COMET_BASH" "$COMET_ARCHIVE" "<change-name>"
+node "$COMET_ARCHIVE" "<change-name>"
 ```
 
 脚本自动执行：
@@ -70,7 +74,7 @@ brainstorming → delta spec → 实施 → 验证 → 主 spec 覆盖 → desig
 - 归档目录 `openspec/changes/archive/YYYY-MM-DD-<change-name>/` 存在
 - 归档后的 `.comet.yaml` 中 `archived: true`
 
-归档脚本会把 `openspec/changes/<name>/` 移动到 `openspec/changes/archive/YYYY-MM-DD-<name>/`。归档成功后**不要再对原 change 名运行** `"$COMET_BASH" "$COMET_GUARD" <change-name> archive`，因为原活跃目录已经不存在。归档完整性以脚本退出码和归档目录状态为准。
+归档脚本会把 `openspec/changes/<name>/` 移动到 `openspec/changes/archive/YYYY-MM-DD-<name>/`。归档成功后**不要再对原 change 名运行** `node "$COMET_GUARD" <change-name> archive`，因为原活跃目录已经不存在。归档完整性以脚本退出码和归档目录状态为准。
 
 ## 完成
 

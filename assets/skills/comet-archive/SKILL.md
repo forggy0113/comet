@@ -18,13 +18,17 @@ description: "Comet Phase 5: Archive. Invoke with /comet-archive. Sync delta spe
 Execute entry verification:
 
 ```bash
-COMET_ENV="${COMET_ENV:-$(find . "$HOME"/.*/skills "$HOME/.config" "$HOME/.gemini" -path '*/comet/scripts/comet-env.sh' -type f -print -quit 2>/dev/null)}"
+COMET_ENV="${COMET_ENV:-$(find . "$HOME"/.*/skills "$HOME/.config" "$HOME/.gemini" -path '*/comet/scripts/comet-env.js' -type f -print -quit 2>/dev/null)}"
 if [ -z "$COMET_ENV" ]; then
-  echo "ERROR: comet-env.sh not found. Ensure the comet skill is installed." >&2
+  echo "ERROR: comet-env.js not found. Ensure the comet skill is installed." >&2
   return 1
 fi
-. "$COMET_ENV"
-"$COMET_BASH" "$COMET_STATE" check <name> archive
+COMET_ENV_JSON="$(node "$COMET_ENV")"
+COMET_STATE="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_STATE))")"
+COMET_GUARD="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_GUARD))")"
+COMET_HANDOFF="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_HANDOFF))")"
+COMET_ARCHIVE="$(printf '%s' "$COMET_ENV_JSON" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).COMET_ARCHIVE))")"
+node "$COMET_STATE" check <name> archive
 ```
 
 Proceed to Step 1 after verification passes. The script outputs specific failure reasons when verification fails.
@@ -38,7 +42,7 @@ Archive summaries and lifecycle closure notes must use the language of the user 
 Run the archive script to automatically complete all steps:
 
 ```bash
-"$COMET_BASH" "$COMET_ARCHIVE" "<change-name>"
+node "$COMET_ARCHIVE" "<change-name>"
 ```
 
 The script automatically executes:
@@ -70,7 +74,7 @@ brainstorming → delta spec → implementation → verification → main spec o
 - Archive directory `openspec/changes/archive/YYYY-MM-DD-<change-name>/` exists
 - Archived `.comet.yaml` contains `archived: true`
 
-The archive script moves `openspec/changes/<name>/` to `openspec/changes/archive/YYYY-MM-DD-<name>/`. After successful archive, **do not run** `"$COMET_BASH" "$COMET_GUARD" <change-name> archive` against the old active change name; the active directory no longer exists. Archive completeness is determined by script exit code and archived directory state.
+The archive script moves `openspec/changes/<name>/` to `openspec/changes/archive/YYYY-MM-DD-<name>/`. After successful archive, **do not run** `node "$COMET_GUARD" <change-name> archive` against the old active change name; the active directory no longer exists. Archive completeness is determined by script exit code and archived directory state.
 
 ## Complete
 

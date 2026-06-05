@@ -64,7 +64,7 @@ Long-term Skill users know these capabilities can be freely combined, but exactl
 
 - **How to turn document synchronization from "user reminders" into automation** — Comet puts handoff, state updates, validation, and archive sync into scripted flows, reducing repeated prompts like "remember to update the design doc", "remember to sync the spec", and "remember to archive the change".
 
-- **How to design guard conditions that Agents can execute** — Comet does not simply trust the Agent saying "done" at phase exits. Scripts such as `comet-guard.sh`, `comet-yaml-validate.sh`, and `comet-state.sh` check tasks, state fields, verification evidence, and archive conditions before allowing the workflow to advance.
+- **How to design guard conditions that Agents can execute** — Comet does not simply trust the Agent saying "done" at phase exits. Node scripts such as `comet-guard.js`, `comet-yaml-validate.js`, and `comet-state.js` check tasks, state fields, verification evidence, and archive conditions before allowing the workflow to advance.
 
 - **How to distribute and install Skills across platforms** — Comet supports multiple AI coding platforms, project/global installation, Chinese/English Skill choices, and platform-specific directory differences such as Antigravity using different project-level and global paths. It can be a reference for CLI installers and Skill package structure.
 
@@ -239,12 +239,12 @@ After `comet init`, three groups of skills are installed to the selected platfor
 
 | Script                   | Purpose                                                                                               |
 | ------------------------ | ----------------------------------------------------------------------------------------------------- |
-| `comet-env.sh`           | Script discovery helper — exports bundled script paths such as `COMET_GUARD`, `COMET_STATE`, `COMET_HANDOFF`, and `COMET_ARCHIVE` |
-| `comet-guard.sh`         | Phase transition guard — validates exit conditions, `--apply` auto-updates `.comet.yaml`              |
-| `comet-handoff.sh`       | Design handoff — generates deterministic context packages from OpenSpec artifacts with SHA256 tracing |
-| `comet-archive.sh`       | One-command archive — validates state, syncs specs, moves to archive, updates status                  |
-| `comet-yaml-validate.sh` | Schema validator — validates `.comet.yaml` structure and field values                                 |
-| `comet-state.sh`         | Unified state management — init/set/get/check/scale, agents' exclusive YAML interface                 |
+| `comet-env.js`           | Script discovery helper — prints bundled script paths such as `COMET_GUARD`, `COMET_STATE`, `COMET_HANDOFF`, and `COMET_ARCHIVE` as JSON |
+| `comet-guard.js`         | Phase transition guard — validates exit conditions, `--apply` auto-updates `.comet.yaml`              |
+| `comet-handoff.js`       | Design handoff — generates deterministic context packages from OpenSpec artifacts with SHA256 tracing |
+| `comet-archive.js`       | One-command archive — validates state, syncs specs, moves to archive, updates status                  |
+| `comet-yaml-validate.js` | Schema validator — validates `.comet.yaml` structure and field values                                 |
+| `comet-state.js`         | Unified state management — init/set/get/check/scale, agents' exclusive YAML interface                 |
 
 </details>
 
@@ -326,7 +326,7 @@ handoff_context: openspec/changes/<name>/.comet/handoff/design-context.json
 handoff_hash: <sha256>
 ```
 
-In full workflow, `build_mode`, `build_pause`, `isolation`, and `verify_mode` may temporarily be `null`; `build_mode` and `isolation` must be resolved before `build → verify`. `build_pause` records an internal build-phase pause point: `null` means no pause, while `plan-ready` means the plan has been generated and the user paused before choosing isolation and execution mode. It is not an execution mode and must not be written into `build_mode`. `verification_report` stays `null` until verification writes a report, and `verify-pass` requires that report to exist plus `branch_status: handled`. Fields after `archived` in the example are optional or script-derived: `direct_override` is only needed for full-workflow direct builds, project commands may be absent unless configured, and `handoff_context` / `handoff_hash` are recorded by `comet-handoff.sh` before leaving design. Projects can configure `build_command` / `verify_command` in the change or repo root, and guard will run those commands first and print failure output.
+In full workflow, `build_mode`, `build_pause`, `isolation`, and `verify_mode` may temporarily be `null`; `build_mode` and `isolation` must be resolved before `build → verify`. `build_pause` records an internal build-phase pause point: `null` means no pause, while `plan-ready` means the plan has been generated and the user paused before choosing isolation and execution mode. It is not an execution mode and must not be written into `build_mode`. `verification_report` stays `null` until verification writes a report, and `verify-pass` requires that report to exist plus `branch_status: handled`. Fields after `archived` in the example are optional or script-derived: `direct_override` is only needed for full-workflow direct builds, project commands may be absent unless configured, and `handoff_context` / `handoff_hash` are recorded by `comet-handoff.js` before leaving design. Projects can configure `build_command` / `verify_command` in the change or repo root, and guard will run those commands first and print failure output.
 
 </details>
 
@@ -341,13 +341,13 @@ Comet ensures agent execution reliability through automated state transitions:
    - Checks file existence, state consistency, and phase transitions
    - Outputs `[HARD STOP]` with actionable suggestions if validation fails
 
-2. **Automated State Transitions** — `comet-guard.sh --apply` updates `.comet.yaml` automatically
+2. **Automated State Transitions** — `comet-guard.js --apply` updates `.comet.yaml` automatically
    - All phase transitions (open → design/build → verify → archive) use `guard --apply`
    - No manual state editing required — eliminates write-verification errors
-   - `comet-state.sh` is the agents' exclusive interface for state operations
-   - Guard and archive scripts use `comet-state.sh` internally for state management
+   - `comet-state.js` is the agents' exclusive interface for state operations
+   - Guard and archive scripts use `comet-state.js` internally for state management
 
-3. **Schema Validation** — `comet-yaml-validate.sh` ensures data integrity
+3. **Schema Validation** — `comet-yaml-validate.js` ensures data integrity
    - Validates required and optional fields
    - Validates enum values, including `direct_override`
    - Validates `design_doc`, `plan`, and `handoff_context` paths exist, plus `handoff_hash` format
@@ -365,7 +365,7 @@ Comet ensures agent execution reliability through automated state transitions:
    - Guard checks `verification_report exists` and `branch_status=handled` as hard prerequisites
    - Prevents false phase advances when verification or branch handling was skipped
 
-6. **Archive Automation** — `comet-archive.sh` handles the full archive flow in one command
+6. **Archive Automation** — `comet-archive.js` handles the full archive flow in one command
    - Validates entry state, syncs delta specs to main specs
    - Annotates design doc and plan frontmatter
    - Moves change to archive directory and updates `archived: true`
@@ -380,12 +380,12 @@ your-project/
 ├── .claude/skills/              # Platform skills dir (Comet + OpenSpec + Superpowers)
 │   ├── comet/SKILL.md
 │   │   └── scripts/
-│   │       ├── comet-guard.sh       # Phase transition guard (--apply auto-updates state)
-│   │       ├── comet-env.sh         # Script discovery helper
-│   │       ├── comet-handoff.sh     # Design handoff (OpenSpec → Superpowers context tracing)
-│   │       ├── comet-archive.sh     # One-command archive automation
-│   │       ├── comet-yaml-validate.sh # Schema validator
-│   │       └── comet-state.sh       # Unified state management (init/set/get/check/scale)
+│   │       ├── comet-guard.js       # Phase transition guard (--apply auto-updates state)
+│   │       ├── comet-env.js         # Script discovery helper
+│   │       ├── comet-handoff.js     # Design handoff (OpenSpec → Superpowers context tracing)
+│   │       ├── comet-archive.js     # One-command archive automation
+│   │       ├── comet-yaml-validate.js # Schema validator
+│   │       └── comet-state.js       # Unified state management (init/set/get/check/scale)
 │   ├── comet-*/SKILL.md
 │   ├── openspec-*/SKILL.md
 │   └── brainstorming/SKILL.md

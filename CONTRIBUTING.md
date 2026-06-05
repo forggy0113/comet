@@ -17,7 +17,6 @@ pnpm build
 | `pnpm build` | Compile TypeScript |
 | `pnpm test` | Run unit tests |
 | `pnpm test:coverage` | Run tests with coverage |
-| `pnpm test:shell` | Run shell script tests (requires bats) |
 | `pnpm lint` | Run ESLint |
 | `pnpm format` | Run Prettier |
 
